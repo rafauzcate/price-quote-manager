@@ -28,65 +28,75 @@ interface ParsedQuote {
   line_items: LineItem[];
 }
 
-const PARSE_PROMPT = `You are a quote parsing assistant. Extract ALL information from the provided quote/document text. Return a JSON object with exactly these fields:
+const PARSE_PROMPT = `You are a quote parsing assistant. Extract ALL information from the provided supplier quotation/proposal document. Return a JSON object with exactly these fields:
 
-- supplier: name of the company providing the quote (the supplier/vendor company name) (string)
-- supplier_contact_name: name of the supplier's contact person if available (string)
-- supplier_email: email address of the supplier (string)
-- supplier_phone: phone number of the supplier (string)
-- quote_reference: the quote reference number or subject line reference (string)
-- quote_date: date of the quote in YYYY-MM-DD format (string)
-- total_net_amount: sum of all line item net_prices (number, MUST equal sum of all net_price values)
+- supplier: name of the company providing the quote — this is the VENDOR/SUPPLIER, not the customer. Look for company names in headers, footers, letterheads, or "From" fields (string)
+- supplier_contact_name: name of the supplier's contact person — look for names signed at the bottom, or after "Kind regards" / "Yours sincerely" (string)
+- supplier_email: email address of the supplier company (string)
+- supplier_phone: phone number of the supplier — look in headers, footers, or signature blocks (string)
+- quote_reference: the quote/proposal reference number (e.g. "BF74933", "260092-FAB-V1") (string)
+- quote_date: date of the quote in YYYY-MM-DD format. Parse dates like "9 MAR 26" as 2026-03-09, "31/03/2026" as 2026-03-31 (string)
+- total_net_amount: sum of all line item net_prices (number)
 - total_vat_amount: VAT amount if stated, otherwise 0 (number)
 - order_total: total_net_amount + total_vat_amount (number)
-- line_items: array of ALL line items
+- line_items: array of ALL priced line items found in the document
 
 Each line item must have:
-  - product_code: product code/SKU/part number (string, use "" if none)
-  - description: full product description including category and size info (string)
-  - quantity: COUNT of items ordered (number, default 1 if not stated)
+  - product_code: product code/SKU/part number/model number (string, use "" if none)
+  - description: full product description (string)
+  - quantity: number of items (number, default 1 if not stated)
   - unit_price: price per single unit (number)
   - discount_percent: discount percentage (number, 0 if none)
-  - net_price: MUST equal quantity × unit_price × (1 - discount_percent/100), always recalculate this
+  - net_price: quantity × unit_price × (1 - discount_percent/100) (number)
 
-CRITICAL CALCULATION RULES:
-- net_price for each line = quantity × unit_price × (1 - discount_percent/100). ALWAYS compute this, do not guess.
-- total_net_amount = SUM of ALL net_price values across all line items. ALWAYS recompute this by adding up every net_price.
+CRITICAL RULES FOR EXTRACTING LINE ITEMS:
+1. Look for ANY item that has a price associated with it — these are line items.
+2. In formal proposals/quotations, line items often appear in tables with columns like "Item Description | Qty | Unit Price | Total Price".
+3. Items may span multiple lines — the description continues on the next lines until a new priced item starts.
+4. "Additional/Optional items" sections ALSO contain line items — extract them too.
+5. Items like "Commissioning", "Training", "Delivery" with prices are ALSO line items.
+6. A "Price Summary" section (e.g. "Gel Labour & Materials including Project Management £52000.00") IS a line item even if it's the only one.
+7. If the document has a single lump-sum price (e.g. "Total £52,000"), create ONE line item with that amount.
+
+CALCULATION RULES:
+- net_price = quantity × unit_price × (1 - discount_percent/100)
+- total_net_amount = SUM of ALL line item net_prices
 - order_total = total_net_amount + total_vat_amount
-- If a price is stated as "X each" and quantity is Y, then unit_price = X and net_price = X × Y.
 
 DOCUMENT TYPE HANDLING:
 
-1. EMAIL/NARRATIVE QUOTES (e.g. "28 off GA5639-12 - SPB03-B-12-6X25-4X20 -- £3,510.00 each"):
-   - Parse sentences like "N off PART_CODE -- £PRICE each": quantity=N, unit_price=PRICE, net_price=N×PRICE
-   - The supplier is the company who SENT the quote email (the From: address company), not the customer
-   - Use the email subject or reference number as quote_reference
-   - Use the email date as quote_date
+1. FORMAL PROPOSALS/QUOTATIONS (e.g. from engineering companies, with letterheads):
+   - The SUPPLIER is the company on the letterhead/header, NOT the client/customer
+   - Look for "Quote Reference", "Proposal Number", "Our Ref" for quote_reference
+   - Look for "Date", "Proposal Date", "Quote Date" for quote_date
+   - Extract ALL priced items from price tables and summary sections
+   - If there's a "Price Summary" with a single total, that IS the line item
 
-2. CSV/SPREADSHEET PRICE LISTS (columns like DN Size, Category, Description, Price):
-   - Each row is a separate line item
-   - quantity defaults to 1 unless a quantity column is present
-   - unit_price = the quoted unit price column value
-   - net_price = quantity × unit_price (since no explicit qty, net_price = unit_price)
-   - Combine category + description columns into the description field
-   - The document may not have a named supplier — use any company name found or "Not specified"
+2. EMAIL/NARRATIVE QUOTES (e.g. "28 off GA5639-12 -- £3,510.00 each"):
+   - Parse "N off PART_CODE -- £PRICE each": quantity=N, unit_price=PRICE
+   - Supplier = company who SENT the quote
+   - Use email subject/reference as quote_reference
 
-3. FORMAL INVOICES/PURCHASE ORDERS (structured tables with qty, unit price, totals):
-   - Map columns carefully: qty column → quantity, unit price column → unit_price
-   - net_price column → verify it equals qty × unit_price
-   - Use stated totals if they match; if they don't match, recalculate from line items
+3. CSV/SPREADSHEET PRICE LISTS:
+   - Each row = separate line item, quantity defaults to 1
+   - Combine category + description into description field
 
-IMPORTANT RULES:
-- Extract EVERY line item — do not skip any rows.
-- IGNORE customer contact details. Only capture SUPPLIER contact info (the company providing the quote).
+4. TABULAR QUOTES (columns: Item Description | Qty | Unit Price | Total Price):
+   - Each row with a price = a line item
+   - Description may wrap across multiple text lines
+   - "Total Price" column = net_price (verify: should equal qty × unit_price)
+
+IMPORTANT:
+- Extract EVERY priced item — do not skip any.
+- IGNORE customer/client contact details. Only capture SUPPLIER info.
 - quantity is ALWAYS a count (1, 2, 28, etc.), NEVER a percentage or price.
-- discount_percent is ALWAYS 0–100, NEVER a price.
+- Prices: remove currency symbols (£, $, €) and commas before converting to numbers.
 - If total_net_amount is not stated, compute it by summing all net_price values.
+- The line_items array must NEVER be empty if there are any prices in the document.
 
 Default values when field cannot be determined:
 - strings: "Not specified"
 - numbers: 0
-- line_items: []
 
 Return only valid JSON, no other text.`;
 
@@ -193,7 +203,8 @@ export async function parseQuoteClientSide(
             content: `${PARSE_PROMPT}\n\nQuote text to parse:\n${truncatedText}`,
           },
         ],
-        temperature: 0.3,
+        temperature: 0.1,
+        response_format: { type: 'json_object' },
       }),
     });
 

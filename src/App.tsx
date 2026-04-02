@@ -315,7 +315,7 @@ function App() {
         }));
 
         const { error: lineItemsError } = await supabase
-          .from('line_items')
+          .from('quote_line_items')
           .insert(lineItems);
 
         if (lineItemsError) {

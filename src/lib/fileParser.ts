@@ -62,17 +62,45 @@ async function parsePdfFile(file: File): Promise<string> {
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
 
     let fullText = '';
+    // Limit to first 5 pages for quote content (technical drawings/specs beyond that aren't useful)
+    const maxPages = Math.min(pdf.numPages, 5);
 
-    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+    for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
       const page = await pdf.getPage(pageNum);
       const textContent = await page.getTextContent();
-      const pageText = textContent.items
-        .map((item: any) => item.str)
-        .join(' ');
-      fullText += pageText + '\n';
+
+      if (textContent.items.length === 0) continue;
+
+      // Build structured text preserving line breaks based on Y-position
+      // This is critical for AI to understand table structures (Item | Qty | Price)
+      let lastY: number | null = null;
+      let pageText = '';
+
+      for (const item of textContent.items as any[]) {
+        const currentY = item.transform ? item.transform[5] : null;
+
+        if (currentY !== null && lastY !== null && Math.abs(currentY - lastY) > 2) {
+          // Y position changed significantly — this is a new line
+          pageText += '\n';
+        } else if (pageText.length > 0 && !pageText.endsWith('\n') && !pageText.endsWith(' ')) {
+          // Same line, add a space separator between text chunks
+          pageText += ' ';
+        }
+
+        pageText += item.str;
+        lastY = currentY;
+      }
+
+      fullText += `--- Page ${pageNum} ---\n${pageText.trim()}\n\n`;
     }
 
-    return fullText.trim();
+    const result = fullText.trim();
+
+    if (!result || result.length < 20) {
+      throw new Error('PDF appears to contain no readable text. It may be a scanned image — please try copying and pasting the quote text directly.');
+    }
+
+    return result;
   } catch (error) {
     throw new Error(`Failed to parse PDF: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
