@@ -218,24 +218,51 @@ function App() {
       const sequenceNumber = existingQuotes && existingQuotes.length > 0 ? existingQuotes.length + 1 : 1;
       const generatedPartNumber = `${data.referenceNumber}-${String(sequenceNumber).padStart(2, '0')}`;
 
+      // Try AI parsing via the parse_quote edge function
+      let parsedData: any = null;
+      let aiParsingSucceeded = false;
+
+      if (data.fileContent && data.fileContent !== 'Manual entry - no file uploaded') {
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+
+          if (session?.access_token) {
+            const { data: parseResult, error: parseError } = await supabase.functions.invoke('parse_quote', {
+              body: { text: data.fileContent },
+            });
+
+            if (parseError) {
+              console.warn('AI parsing failed, falling back to manual mode:', parseError.message);
+            } else if (parseResult?.error) {
+              console.warn('AI parsing returned error, falling back to manual mode:', parseResult.error);
+            } else if (parseResult) {
+              parsedData = parseResult;
+              aiParsingSucceeded = true;
+            }
+          }
+        } catch (parseErr) {
+          console.warn('AI parsing exception, falling back to manual mode:', parseErr);
+        }
+      }
+
       const newQuote = {
         user_id: user.id,
         reference_name: data.referenceName,
         reference_number: data.referenceNumber,
         generated_part_number: generatedPartNumber,
-        supplier: 'Not specified',
+        supplier: parsedData?.supplier || 'Not specified',
         part_description: 'Not specified',
-        price: 0,
+        price: parsedData?.order_total || 0,
         lead_time: 'Not specified',
-        contact_person: 'Not specified',
-        quote_reference: 'Not specified',
-        quote_date: null,
-        total_net_amount: 0,
-        total_vat_amount: 0,
-        order_total: 0,
-        supplier_contact_name: 'Not specified',
-        supplier_email: 'Not specified',
-        supplier_phone: 'Not specified',
+        contact_person: parsedData?.supplier_contact_name || 'Not specified',
+        quote_reference: parsedData?.quote_reference || 'Not specified',
+        quote_date: parsedData?.quote_date || null,
+        total_net_amount: parsedData?.total_net_amount || 0,
+        total_vat_amount: parsedData?.total_vat_amount || 0,
+        order_total: parsedData?.order_total || 0,
+        supplier_contact_name: parsedData?.supplier_contact_name || 'Not specified',
+        supplier_email: parsedData?.supplier_email || 'Not specified',
+        supplier_phone: parsedData?.supplier_phone || 'Not specified',
         file_content: data.fileContent,
         file_hash: fileHash,
         file_name: data.fileName,
@@ -252,7 +279,29 @@ function App() {
         throw new Error(`Database error: ${insertError.message}`);
       }
 
-      setManualMode(true);
+      // If AI parsing succeeded and we have line items, insert them
+      if (aiParsingSucceeded && parsedData?.line_items?.length > 0 && insertedQuote) {
+        const lineItems = parsedData.line_items.map((item: any) => ({
+          quote_id: insertedQuote.id,
+          product_code: item.product_code || '',
+          description: item.description || 'Not specified',
+          quantity: typeof item.quantity === 'number' ? item.quantity : 0,
+          unit_price: typeof item.unit_price === 'number' ? item.unit_price : 0,
+          discount_percent: typeof item.discount_percent === 'number' ? item.discount_percent : 0,
+          net_price: typeof item.net_price === 'number' ? item.net_price : 0,
+        }));
+
+        const { error: lineItemsError } = await supabase
+          .from('line_items')
+          .insert(lineItems);
+
+        if (lineItemsError) {
+          console.error('Failed to insert line items:', lineItemsError);
+        }
+      }
+
+      // Set manual mode only if AI parsing failed
+      setManualMode(!aiParsingSucceeded);
 
       if (insertedQuote) {
         setPendingQuoteId(insertedQuote.id);
