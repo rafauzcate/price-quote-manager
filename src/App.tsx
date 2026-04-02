@@ -13,6 +13,7 @@ import { ExpiredQuotesBanner } from './components/ExpiredQuotesBanner';
 import { Footer } from './components/Footer';
 import { supabase } from './lib/supabase';
 import { generateFileHash, checkDuplicateFile, findSimilarItems, type DuplicateFileWarning, type SimilarItemWarning } from './lib/duplicateDetection';
+import { parseQuoteClientSide } from './lib/clientAiParser';
 import { calculateTrialStatus, type TrialStatus } from './lib/trialLogic';
 import { LogOut } from 'lucide-react';
 import type { User } from '@supabase/supabase-js';
@@ -218,11 +219,12 @@ function App() {
       const sequenceNumber = existingQuotes && existingQuotes.length > 0 ? existingQuotes.length + 1 : 1;
       const generatedPartNumber = `${data.referenceNumber}-${String(sequenceNumber).padStart(2, '0')}`;
 
-      // Try AI parsing via the parse_quote edge function
+      // Try AI parsing — first via Edge Function, then client-side fallback
       let parsedData: any = null;
       let aiParsingSucceeded = false;
 
       if (data.fileContent && data.fileContent !== 'Manual entry - no file uploaded') {
+        // Attempt 1: Try the Supabase Edge Function
         try {
           const { data: { session } } = await supabase.auth.getSession();
 
@@ -232,16 +234,37 @@ function App() {
             });
 
             if (parseError) {
-              console.warn('AI parsing failed, falling back to manual mode:', parseError.message);
+              console.warn('Edge Function failed, will try client-side parsing:', parseError.message);
             } else if (parseResult?.error) {
-              console.warn('AI parsing returned error, falling back to manual mode:', parseResult.error);
+              console.warn('Edge Function returned error, will try client-side parsing:', parseResult.error);
             } else if (parseResult) {
               parsedData = parseResult;
               aiParsingSucceeded = true;
             }
           }
         } catch (parseErr) {
-          console.warn('AI parsing exception, falling back to manual mode:', parseErr);
+          console.warn('Edge Function exception, will try client-side parsing:', parseErr);
+        }
+
+        // Attempt 2: Client-side fallback if Edge Function failed
+        if (!aiParsingSucceeded) {
+          console.log('Attempting client-side AI parsing as fallback...');
+          try {
+            const clientResult = await parseQuoteClientSide(data.fileContent, user.id);
+            if (clientResult.success && clientResult.data) {
+              parsedData = clientResult.data;
+              aiParsingSucceeded = true;
+              console.log('Client-side AI parsing succeeded');
+            } else {
+              console.warn('Client-side AI parsing failed:', clientResult.error);
+              // Show a helpful message but don't block quote creation
+              if (clientResult.error?.includes('No OpenAI API key')) {
+                setError('AI parsing unavailable — no OpenAI API key configured. Your quote was saved in manual mode. Go to Settings (⚙) to add your API key for automatic parsing.');
+              }
+            }
+          } catch (clientErr) {
+            console.warn('Client-side AI parsing exception:', clientErr);
+          }
         }
       }
 
