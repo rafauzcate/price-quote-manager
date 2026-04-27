@@ -1,4 +1,4 @@
-import logo from '../../assets/logo-premium.png';
+import logo from '@/assets/logo.png';
 
 interface BrandLogoProps {
   compact?: boolean;

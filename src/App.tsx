@@ -4,6 +4,13 @@ import type { User } from '@supabase/supabase-js';
 import { Toaster, toast } from 'sonner';
 import { supabase } from './lib/supabase';
 import { fetchSubscriptionStatus, isSuperAdmin, type SubscriptionStatusResponse } from './lib/subscription';
+import {
+  getEndpointBlockStatus,
+  getEndpointFailureSnapshot,
+  recordEndpointFailure,
+  recordEndpointSuccess,
+  resetEndpointFailures,
+} from './lib/errorHandler';
 import { generateFileHash, checkDuplicateFile } from './lib/duplicateDetection';
 import { LandingPage } from './pages/LandingPage';
 import { AuthPage } from './pages/AuthPage';
@@ -25,8 +32,31 @@ const OrganizationPage = lazy(() => import('./pages/app/OrganizationPage').then(
 const AdminPage = lazy(() => import('./pages/app/AdminPage').then((m) => ({ default: m.AdminPage })));
 const SettingsPage = lazy(() => import('./pages/app/SettingsPage').then((m) => ({ default: m.SettingsPage })));
 
+const QUOTES_ENDPOINT_KEY = 'quotes:list';
+const SUBSCRIPTION_ENDPOINT_KEY = 'subscription:status';
+
 function LoadingState({ message }: { message: string }) {
   return <div className="rounded-xl border border-slatePremium-200 bg-white p-6 text-sm text-slatePremium-500">{message}</div>;
+}
+
+function buildSuperadminStatus(profile?: UserProfile | null): SubscriptionStatusResponse {
+  return {
+    has_access: true,
+    access_reason: 'superadmin',
+    is_superadmin: true,
+    profile: {
+      subscription_status: profile?.subscription_status || 'active',
+      trial_ends_at: profile?.trial_ends_at || null,
+      organization_id: profile?.organization_id || null,
+    },
+    subscription: null,
+    permissions: {
+      can_use_all_features: true,
+      can_manage_admin_dashboard: true,
+      can_manage_organization: true,
+    },
+    trial_days_remaining: 0,
+  };
 }
 
 function AppRouter() {
@@ -38,6 +68,8 @@ function AppRouter() {
 
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [quotesLoading, setQuotesLoading] = useState(false);
+  const [quotesErrorMessage, setQuotesErrorMessage] = useState<string | null>(null);
+  const [quotesBlockedUntil, setQuotesBlockedUntil] = useState(0);
   const [pendingQuoteId, setPendingQuoteId] = useState<string | null>(null);
   const [showNotesModal, setShowNotesModal] = useState(false);
 
@@ -49,13 +81,23 @@ function AppRouter() {
   const quotesRequestIdRef = useRef(0);
   const userProfileRef = useRef<UserProfile | null>(null);
 
-  const refreshSubscriptionStatus = useCallback(
-    async (profile?: UserProfile | null) => {
-      const activeUser = user ?? (await supabase.auth.getUser()).data.user;
+  const setSuperadminAccess = useCallback((profile?: UserProfile | null) => {
+    setSubscriptionStatus(buildSuperadminStatus(profile));
+    setSubscriptionLoading(false);
+    recordEndpointSuccess(SUBSCRIPTION_ENDPOINT_KEY);
+  }, []);
 
+  const refreshSubscriptionStatus = useCallback(
+    async (activeUser: User | null, profile?: UserProfile | null) => {
       if (!activeUser) {
         setSubscriptionStatus(null);
         setSubscriptionLoading(false);
+        return;
+      }
+
+      const resolvedIsSuperadmin = isSuperAdmin(activeUser.email) || Boolean(profile?.is_superadmin);
+      if (resolvedIsSuperadmin) {
+        setSuperadminAccess(profile);
         return;
       }
 
@@ -74,31 +116,10 @@ function AppRouter() {
         return;
       }
 
-      const emailIsSuperadmin = isSuperAdmin(activeUser.email);
-      const profileIsSuperadmin = Boolean(profile?.is_superadmin);
-      const resolvedIsSuperadmin = emailIsSuperadmin || profileIsSuperadmin;
-
-      if (resolvedIsSuperadmin) {
-        const superadminStatus: SubscriptionStatusResponse = {
-          has_access: true,
-          access_reason: 'superadmin',
-          is_superadmin: true,
-          profile: {
-            subscription_status: profile?.subscription_status || 'active',
-            trial_ends_at: profile?.trial_ends_at || null,
-            organization_id: profile?.organization_id || null,
-          },
-          subscription: null,
-          permissions: {
-            can_use_all_features: true,
-            can_manage_admin_dashboard: true,
-            can_manage_organization: true,
-          },
-          trial_days_remaining: 0,
-        };
-
+      const blockStatus = getEndpointBlockStatus(SUBSCRIPTION_ENDPOINT_KEY);
+      if (blockStatus.blocked) {
         if (requestId === subscriptionRequestIdRef.current) {
-          setSubscriptionStatus(superadminStatus);
+          setSubscriptionStatus((previous) => previous);
           setSubscriptionLoading(false);
         }
         return;
@@ -111,8 +132,12 @@ function AppRouter() {
           return;
         }
 
+        recordEndpointSuccess(SUBSCRIPTION_ENDPOINT_KEY);
         setSubscriptionStatus(status);
       } catch (err) {
+        const message = err instanceof Error ? err.message : 'Unknown subscription error';
+        const breaker = recordEndpointFailure(SUBSCRIPTION_ENDPOINT_KEY, message);
+
         console.warn('Unable to fetch subscription status, using fallback', err);
         const trialDate = profile?.trial_ends_at;
         const daysLeft = trialDate
@@ -139,7 +164,11 @@ function AppRouter() {
 
         if (requestId === subscriptionRequestIdRef.current) {
           setSubscriptionStatus(fallback);
-          toast.error('Subscription check failed temporarily. Using local access fallback.');
+          if (breaker.blocked) {
+            toast.error('Unable to connect. Please refresh the page.');
+          } else {
+            toast.error('Subscription check failed temporarily. Using local access fallback.');
+          }
         }
       } finally {
         if (requestId === subscriptionRequestIdRef.current) {
@@ -147,70 +176,100 @@ function AppRouter() {
         }
       }
     },
+    [setSuperadminAccess],
+  );
+
+  const fetchQuotes = useCallback(
+    async (options?: { force?: boolean }) => {
+      if (!user) return;
+
+      const force = options?.force ?? false;
+      if (force) {
+        resetEndpointFailures(QUOTES_ENDPOINT_KEY);
+        setQuotesErrorMessage(null);
+        setQuotesBlockedUntil(0);
+      }
+
+      const blockStatus = getEndpointBlockStatus(QUOTES_ENDPOINT_KEY);
+      if (!force && blockStatus.blocked) {
+        setQuotesErrorMessage('Unable to connect. Please refresh the page.');
+        setQuotesBlockedUntil(Date.now() + blockStatus.retryAfterMs);
+        setQuotesLoading(false);
+        return;
+      }
+
+      const requestId = ++quotesRequestIdRef.current;
+      setQuotesLoading(true);
+
+      try {
+        const { data: quotesData, error: quotesError } = await supabase.from('quotes').select('*').order('created_at', { ascending: false });
+
+        if (quotesError) {
+          throw quotesError;
+        }
+
+        const quoteIds = (quotesData || []).map((quote) => quote.id);
+        let lineItemsByQuoteId = new Map<string, any[]>();
+
+        if (quoteIds.length > 0) {
+          const { data: allLineItems, error: lineItemsError } = await supabase
+            .from('quote_line_items')
+            .select('*')
+            .in('quote_id', quoteIds)
+            .order('created_at', { ascending: true });
+
+          if (lineItemsError) {
+            throw lineItemsError;
+          }
+
+          lineItemsByQuoteId = (allLineItems || []).reduce((acc, item) => {
+            const existing = acc.get(item.quote_id) || [];
+            existing.push(item);
+            acc.set(item.quote_id, existing);
+            return acc;
+          }, new Map<string, any[]>());
+        }
+
+        const merged = (quotesData || []).map((quote) => ({
+          ...quote,
+          line_items: lineItemsByQuoteId.get(quote.id) || [],
+        }));
+
+        if (requestId === quotesRequestIdRef.current) {
+          setQuotes(merged as Quote[]);
+          setQuotesErrorMessage(null);
+          setQuotesBlockedUntil(0);
+          recordEndpointSuccess(QUOTES_ENDPOINT_KEY);
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        const breaker = recordEndpointFailure(QUOTES_ENDPOINT_KEY, message);
+        const snapshot = getEndpointFailureSnapshot(QUOTES_ENDPOINT_KEY);
+
+        if (requestId === quotesRequestIdRef.current) {
+          if (breaker.blocked) {
+            setQuotesErrorMessage('Unable to connect. Please refresh the page.');
+            setQuotesBlockedUntil(snapshot.blockedUntil);
+          } else {
+            setQuotesErrorMessage(`Failed to load quotes: ${message}`);
+          }
+        }
+
+        toast.error(breaker.blocked ? 'Unable to connect. Please refresh the page.' : `Failed to load quotes: ${message}`);
+        console.error('Failed to load quotes', error);
+      } finally {
+        if (requestId === quotesRequestIdRef.current) {
+          setQuotesLoading(false);
+        }
+      }
+    },
     [user],
   );
 
-  const fetchQuotes = useCallback(async () => {
-    if (!user) return;
-
-    const requestId = ++quotesRequestIdRef.current;
-    setQuotesLoading(true);
-
-    try {
-      const { data: quotesData, error: quotesError } = await supabase
-        .from('quotes')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (quotesError) {
-        throw quotesError;
-      }
-
-      const quoteIds = (quotesData || []).map((quote) => quote.id);
-      let lineItemsByQuoteId = new Map<string, any[]>();
-
-      if (quoteIds.length > 0) {
-        const { data: allLineItems, error: lineItemsError } = await supabase
-          .from('quote_line_items')
-          .select('*')
-          .in('quote_id', quoteIds)
-          .order('created_at', { ascending: true });
-
-        if (lineItemsError) {
-          throw lineItemsError;
-        }
-
-        lineItemsByQuoteId = (allLineItems || []).reduce((acc, item) => {
-          const existing = acc.get(item.quote_id) || [];
-          existing.push(item);
-          acc.set(item.quote_id, existing);
-          return acc;
-        }, new Map<string, any[]>());
-      }
-
-      const merged = (quotesData || []).map((quote) => ({
-        ...quote,
-        line_items: lineItemsByQuoteId.get(quote.id) || [],
-      }));
-
-      if (requestId === quotesRequestIdRef.current) {
-        setQuotes(merged as Quote[]);
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      toast.error(`Failed to load quotes: ${message}`);
-      console.error('Failed to load quotes', error);
-    } finally {
-      if (requestId === quotesRequestIdRef.current) {
-        setQuotesLoading(false);
-      }
-    }
-  }, [user]);
-
   const fetchUserProfile = useCallback(
-    async (userId: string) => {
+    async (activeUser: User, options?: { skipSubscriptionCheck?: boolean }) => {
       try {
-        const { data: profile, error: profileError } = await supabase.from('user_profiles').select('*').eq('id', userId).maybeSingle();
+        const { data: profile, error: profileError } = await supabase.from('user_profiles').select('*').eq('id', activeUser.id).maybeSingle();
 
         if (profileError) {
           throw profileError;
@@ -218,13 +277,17 @@ function AppRouter() {
 
         if (profile) {
           setUserProfile(profile);
-          await refreshSubscriptionStatus(profile);
+          if (options?.skipSubscriptionCheck || isSuperAdmin(activeUser.email) || profile.is_superadmin) {
+            setSuperadminAccess(profile);
+          } else {
+            await refreshSubscriptionStatus(activeUser, profile);
+          }
         } else {
           const { data: newProfile, error: createProfileError } = await supabase
             .from('user_profiles')
             .insert([
               {
-                id: userId,
+                id: activeUser.id,
                 name: '',
                 company: '',
                 last_login: new Date().toISOString(),
@@ -240,11 +303,15 @@ function AppRouter() {
 
           if (newProfile) {
             setUserProfile(newProfile);
-            await refreshSubscriptionStatus(newProfile);
+            if (options?.skipSubscriptionCheck || isSuperAdmin(activeUser.email) || newProfile.is_superadmin) {
+              setSuperadminAccess(newProfile);
+            } else {
+              await refreshSubscriptionStatus(activeUser, newProfile);
+            }
           }
         }
 
-        const { error: updateLoginError } = await supabase.from('user_profiles').update({ last_login: new Date().toISOString() }).eq('id', userId);
+        const { error: updateLoginError } = await supabase.from('user_profiles').update({ last_login: new Date().toISOString() }).eq('id', activeUser.id);
         if (updateLoginError) {
           console.warn('Unable to update last_login timestamp', updateLoginError);
         }
@@ -253,8 +320,15 @@ function AppRouter() {
         toast.error('Unable to load your profile. Please refresh the page.');
       }
     },
-    [refreshSubscriptionStatus],
+    [refreshSubscriptionStatus, setSuperadminAccess],
   );
+
+  const syncUserState = useCallback((nextUser: User | null) => {
+    setUser((prev) => {
+      const sameIdentity = prev?.id === nextUser?.id && prev?.email === nextUser?.email;
+      return sameIdentity ? prev : nextUser;
+    });
+  }, []);
 
   useEffect(() => {
     userProfileRef.current = userProfile;
@@ -265,10 +339,17 @@ function AppRouter() {
       const {
         data: { session },
       } = await supabase.auth.getSession();
-      setUser(session?.user ?? null);
+
+      syncUserState(session?.user ?? null);
+
       if (session?.user) {
-        await fetchUserProfile(session.user.id);
+        const superadmin = isSuperAdmin(session.user.email);
+        if (superadmin) {
+          setSuperadminAccess(userProfileRef.current);
+        }
+        await fetchUserProfile(session.user, { skipSubscriptionCheck: superadmin });
       }
+
       setAuthLoading(false);
     };
 
@@ -278,24 +359,35 @@ function AppRouter() {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
       (async () => {
-        setUser(session?.user ?? null);
+        const nextUser = session?.user ?? null;
+        syncUserState(nextUser);
 
-        if (session?.user) {
+        if (nextUser) {
+          const superadmin = isSuperAdmin(nextUser.email) || Boolean(userProfileRef.current?.is_superadmin);
+          if (superadmin) {
+            setSuperadminAccess(userProfileRef.current);
+          }
+
           if (event === 'TOKEN_REFRESHED') {
-            await refreshSubscriptionStatus(userProfileRef.current);
+            if (!superadmin) {
+              await refreshSubscriptionStatus(nextUser, userProfileRef.current);
+            }
           } else {
-            await fetchUserProfile(session.user.id);
+            await fetchUserProfile(nextUser, { skipSubscriptionCheck: superadmin });
           }
         } else {
           setSubscriptionStatus(null);
           setUserProfile(null);
           setQuotes([]);
+          setQuotesErrorMessage(null);
+          setQuotesBlockedUntil(0);
+          resetEndpointFailures(QUOTES_ENDPOINT_KEY);
         }
       })();
     });
 
     return () => subscription.unsubscribe();
-  }, [fetchUserProfile, refreshSubscriptionStatus]);
+  }, [fetchUserProfile, refreshSubscriptionStatus, setSuperadminAccess, syncUserState]);
 
   useEffect(() => {
     if (user && subscriptionStatus?.has_access) fetchQuotes();
@@ -330,6 +422,10 @@ function AppRouter() {
     navigate('/');
   };
 
+  const handleRetryQuotes = async () => {
+    await fetchQuotes({ force: true });
+  };
+
   const handleDeleteQuote = async (quoteId: string) => {
     const { error: lineItemsError } = await supabase.from('quote_line_items').delete().eq('quote_id', quoteId);
     if (lineItemsError) {
@@ -344,7 +440,7 @@ function AppRouter() {
     }
 
     toast.success('Quote deleted');
-    await fetchQuotes();
+    await fetchQuotes({ force: true });
   };
 
   const handleCreateQuote = async (data: {
@@ -441,7 +537,7 @@ function AppRouter() {
     setPendingQuoteId(insertedQuote.id);
     setShowNotesModal(true);
     toast.success('Quote created successfully');
-    await fetchQuotes();
+    await fetchQuotes({ force: true });
   };
 
   const handleSaveNotes = async (notes: string) => {
@@ -449,7 +545,7 @@ function AppRouter() {
     await supabase.from('quotes').update({ notes: notes || null }).eq('id', pendingQuoteId);
     setPendingQuoteId(null);
     setShowNotesModal(false);
-    await fetchQuotes();
+    await fetchQuotes({ force: true });
   };
 
   const canEnterApp = !!user && (isCurrentUserSuperadmin || !!subscriptionStatus?.has_access);
@@ -507,13 +603,32 @@ function AppRouter() {
                       </div>
                     ) : null}
                     <main className="flex-1 px-4 py-5 pb-20 md:px-6 md:pb-6">
+                      {quotesErrorMessage ? (
+                        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                          <div>
+                            <p className="font-semibold">{quotesErrorMessage}</p>
+                            {quotesBlockedUntil > Date.now() ? (
+                              <p className="text-xs text-red-600">
+                                Auto-fetch paused for 30 seconds to avoid request loops. Please retry manually.
+                              </p>
+                            ) : null}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleRetryQuotes}
+                            className="rounded-lg bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-700"
+                          >
+                            Retry
+                          </button>
+                        </div>
+                      ) : null}
                       <Suspense fallback={<LoadingState message="Loading workspace..." />}>
                         <Routes>
                           <Route
                             path="dashboard"
                             element={
                               <div className="space-y-5">
-                                {user?.id ? <ExpiredQuotesBanner userId={user.id} onRefresh={fetchQuotes} /> : null}
+                                {user?.id ? <ExpiredQuotesBanner userId={user.id} onRefresh={() => fetchQuotes({ force: true })} /> : null}
                                 <DashboardOverviewPage quotes={quotes} loading={quotesLoading} />
                               </div>
                             }
