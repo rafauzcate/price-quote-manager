@@ -1,9 +1,8 @@
-import { motion } from 'framer-motion';
 import { ArrowRight, CheckCircle2, Star } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { BrandLogo } from '../components/layout/BrandLogo';
 import { Button } from '../components/ui/Button';
-import { PLAN_CONFIGS } from '../lib/subscription';
+import { PLAN_CONFIGS } from '../lib/plans';
 
 const features = [
   {
@@ -41,13 +40,7 @@ export function LandingPage() {
           </div>
 
           <div className="mt-20 max-w-3xl">
-            <motion.h1
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="text-5xl font-extrabold leading-tight"
-            >
-              Transform Your Quote Management
-            </motion.h1>
+            <h1 className="text-5xl font-extrabold leading-tight">Transform Your Quote Management</h1>
             <p className="mt-6 max-w-2xl text-lg text-slate-200">
               VantagePM turns fragmented supplier quotes into a premium decision platform built for fast-moving procurement teams.
             </p>
@@ -88,10 +81,10 @@ export function LandingPage() {
               <p className="mt-4 text-3xl font-bold">£{plan.priceGbp}</p>
               <p className="text-xs text-slatePremium-500">per month</p>
               <ul className="mt-4 space-y-2 text-sm text-slatePremium-700">
-                {plan.features.slice(0, 3).map((f) => (
-                  <li key={f} className="flex items-start gap-2">
+                {plan.features.slice(0, 3).map((feature) => (
+                  <li key={feature} className="flex items-start gap-2">
                     <CheckCircle2 size={16} className="mt-0.5 text-success" />
-                    {f}
+                    {feature}
                   </li>
                 ))}
               </ul>

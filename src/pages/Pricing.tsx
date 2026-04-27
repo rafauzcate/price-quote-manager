@@ -1,17 +1,25 @@
 import { useState } from 'react';
 import { CheckCircle2, Loader2, Sparkles } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
 import { PLAN_CONFIGS, type PlanType, createCheckoutSession } from '../lib/subscription';
 import { Button } from '../components/ui/Button';
 
 interface PricingProps {
   onCheckoutStarted?: () => void;
+  publicMode?: boolean;
 }
 
-export function Pricing({ onCheckoutStarted }: PricingProps) {
+export function Pricing({ onCheckoutStarted, publicMode = false }: PricingProps) {
+  const navigate = useNavigate();
   const [loadingPlan, setLoadingPlan] = useState<PlanType | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const handleStartTrial = async (planType: PlanType) => {
+    if (publicMode) {
+      navigate('/signup');
+      return;
+    }
+
     setError(null);
     setLoadingPlan(planType);
 
@@ -63,10 +71,17 @@ export function Pricing({ onCheckoutStarted }: PricingProps) {
                 <>
                   <Loader2 className="animate-spin" size={14} /> Creating checkout...
                 </>
+              ) : publicMode ? (
+                'Start Free Trial'
               ) : (
                 'Start Free Trial'
               )}
             </Button>
+            {publicMode ? (
+              <p className="mt-3 text-center text-xs text-slatePremium-500">
+                Need an account first? <Link to="/login" className="font-semibold text-navy-800">Sign in</Link>
+              </p>
+            ) : null}
           </div>
         ))}
       </div>

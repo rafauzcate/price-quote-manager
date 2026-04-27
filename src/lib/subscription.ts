@@ -1,56 +1,18 @@
-import { supabase } from './supabase';
+import { PLAN_CONFIGS, type PlanType } from './plans';
+import { isPublicRoute } from './routeGuards';
 
-export type PlanType = 'individual' | 'org_5' | 'org_10' | 'org_50';
-
-export interface PlanConfig {
-  id: PlanType;
-  name: string;
-  priceGbp: number;
-  seats: number;
-  description: string;
-  features: string[];
-}
-
-export const PLAN_CONFIGS: PlanConfig[] = [
-  {
-    id: 'individual',
-    name: 'Individual',
-    priceGbp: 20,
-    seats: 1,
-    description: 'Perfect for solo procurement specialists',
-    features: ['1 user account', 'Unlimited quote parsing', 'AI-assisted extraction', 'Basic support'],
-  },
-  {
-    id: 'org_5',
-    name: 'Organization 5',
-    priceGbp: 50,
-    seats: 5,
-    description: 'For small teams with shared workflows',
-    features: ['Up to 5 users', 'Shared organization workspace', 'Team invite management', 'Priority support'],
-  },
-  {
-    id: 'org_10',
-    name: 'Organization 10',
-    priceGbp: 75,
-    seats: 10,
-    description: 'Growing procurement and commercial teams',
-    features: ['Up to 10 users', 'Advanced team access controls', 'Usage transparency', 'Priority support'],
-  },
-  {
-    id: 'org_50',
-    name: 'Organization 50',
-    priceGbp: 100,
-    seats: 50,
-    description: 'Enterprise collaboration at scale',
-    features: ['Up to 50 users', 'Large-team administration', 'Shared quota across org', 'Priority support'],
-  },
-];
+export { PLAN_CONFIGS, type PlanType };
 
 const SUPERADMIN_EMAILS = new Set(['rafael.uzcategui@gmail.com', 'hello@vantageprojectsolution.co.uk']);
 const SUBSCRIPTION_STATUS_CACHE_TTL_MS = 10_000;
 
 let subscriptionStatusInFlight: Promise<SubscriptionStatusResponse> | null = null;
 let subscriptionStatusCache: { data: SubscriptionStatusResponse; timestamp: number } | null = null;
+
+async function getSupabaseClient() {
+  const module = await import('./supabase');
+  return module.getSupabaseClient();
+}
 
 export function isSuperAdmin(email?: string | null): boolean {
   if (!email) return false;
@@ -106,6 +68,16 @@ async function delay(ms: number): Promise<void> {
 }
 
 async function authedFetch(functionPath: string, init?: RequestInit) {
+  if (isPublicRoute()) {
+    console.warn('[Subscription] Blocked function call on public route.', {
+      functionPath,
+      route: window.location.pathname,
+      stack: new Error().stack,
+    });
+    throw new Error('Subscription API unavailable on public routes');
+  }
+
+  const supabase = await getSupabaseClient();
   const {
     data: { session },
   } = await supabase.auth.getSession();
@@ -195,6 +167,7 @@ export function clearSubscriptionStatusCache(): void {
 }
 
 export async function createCheckoutSession(planType: PlanType): Promise<{ checkout_url: string; session_id: string }> {
+  const supabase = await getSupabaseClient();
   const result = await supabase.functions.invoke('create-checkout-session', {
     body: {
       plan_type: planType,
@@ -239,6 +212,7 @@ export async function adminApiUpdateSubscription(payload: {
 }
 
 export async function manageOrganization(action: string, payload: Record<string, unknown>) {
+  const supabase = await getSupabaseClient();
   const result = await supabase.functions.invoke('manage-organization', {
     body: { action, payload },
   });

@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
 import { BrandLogo } from '../components/layout/BrandLogo';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
@@ -10,6 +9,11 @@ type AuthMode = 'login' | 'signup' | 'reset';
 
 interface AuthPageProps {
   mode: AuthMode;
+}
+
+async function getSupabaseClient() {
+  const module = await import('../lib/supabase');
+  return module.getSupabaseClient();
 }
 
 export function AuthPage({ mode }: AuthPageProps) {
@@ -29,6 +33,8 @@ export function AuthPage({ mode }: AuthPageProps) {
     setMessage(null);
 
     try {
+      const supabase = await getSupabaseClient();
+
       if (mode === 'login') {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
