@@ -22,3 +22,6 @@ dist-ssr
 *.sw?
 .env
 .abacus.donotdelete
+
+# Local Netlify folder
+.netlify
