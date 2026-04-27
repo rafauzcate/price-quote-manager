@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis, Line, LineChart, CartesianGrid } from 'recharts';
 import {
   adminApiGetAnalytics,
   adminApiGetOrganizations,
@@ -9,6 +10,8 @@ import {
   PLAN_CONFIGS,
   type PlanType,
 } from '../lib/subscription';
+import { Card, CardBody, CardHeader } from '../components/ui/Card';
+import { Button } from '../components/ui/Button';
 
 interface AdminDashboardProps {
   visible: boolean;
@@ -44,9 +47,7 @@ export function AdminDashboard({ visible }: AdminDashboardProps) {
   };
 
   useEffect(() => {
-    if (visible) {
-      loadData();
-    }
+    if (visible) loadData();
   }, [visible]);
 
   const filteredUsers = useMemo(() => {
@@ -57,6 +58,18 @@ export function AdminDashboard({ visible }: AdminDashboardProps) {
       return source.includes(lower);
     });
   }, [users, query]);
+
+  const planBreakdown = PLAN_CONFIGS.map((plan) => ({
+    plan: plan.name,
+    count: analytics?.plan_breakdown?.[plan.id] ?? 0,
+    revenue: (analytics?.plan_breakdown?.[plan.id] ?? 0) * plan.priceGbp,
+  }));
+
+  const growthSeries = [
+    { label: 'MRR', value: analytics?.revenue_monthly_gbp ?? 0 },
+    { label: 'ARR', value: (analytics?.revenue_monthly_gbp ?? 0) * 12 },
+    { label: 'Active Subscriptions', value: analytics?.active_subscriptions ?? 0 },
+  ];
 
   const handleGrantAccess = async (userId: string) => {
     try {
@@ -89,147 +102,129 @@ export function AdminDashboard({ visible }: AdminDashboardProps) {
 
   return (
     <div className="space-y-6">
-      {error && <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">{error}</div>}
+      {error && <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
 
-      <section className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-white rounded-lg border border-gray-200 p-4">
-          <p className="text-xs text-gray-500">Monthly Revenue (GBP)</p>
-          <p className="text-2xl font-bold text-gray-900">£{analytics?.revenue_monthly_gbp ?? 0}</p>
-        </div>
-        <div className="bg-white rounded-lg border border-gray-200 p-4">
-          <p className="text-xs text-gray-500">Active Subscriptions</p>
-          <p className="text-2xl font-bold text-gray-900">{analytics?.active_subscriptions ?? 0}</p>
-        </div>
-        <div className="bg-white rounded-lg border border-gray-200 p-4">
-          <p className="text-xs text-gray-500">Total Users</p>
-          <p className="text-2xl font-bold text-gray-900">{analytics?.total_users ?? 0}</p>
-        </div>
-        <div className="bg-white rounded-lg border border-gray-200 p-4">
-          <p className="text-xs text-gray-500">Organizations</p>
-          <p className="text-2xl font-bold text-gray-900">{analytics?.total_organizations ?? 0}</p>
-        </div>
+      <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+        <Card><CardBody><p className="text-xs text-slatePremium-500">MRR</p><p className="text-2xl font-bold text-navy-950">£{analytics?.revenue_monthly_gbp ?? 0}</p></CardBody></Card>
+        <Card><CardBody><p className="text-xs text-slatePremium-500">ARR</p><p className="text-2xl font-bold text-navy-950">£{(analytics?.revenue_monthly_gbp ?? 0) * 12}</p></CardBody></Card>
+        <Card><CardBody><p className="text-xs text-slatePremium-500">Growth</p><p className="text-2xl font-bold text-navy-950">{analytics?.revenue_growth_percentage ?? 0}%</p></CardBody></Card>
+        <Card><CardBody><p className="text-xs text-slatePremium-500">Total Users</p><p className="text-2xl font-bold text-navy-950">{analytics?.total_users ?? 0}</p></CardBody></Card>
+        <Card><CardBody><p className="text-xs text-slatePremium-500">Organizations</p><p className="text-2xl font-bold text-navy-950">{analytics?.total_organizations ?? 0}</p></CardBody></Card>
       </section>
 
-      <section className="bg-white rounded-lg border border-gray-200 p-5">
-        <h3 className="text-lg font-semibold text-gray-900 mb-3">Revenue breakdown by plan</h3>
-        <div className="space-y-3">
-          {PLAN_CONFIGS.map((plan) => {
-            const count = analytics?.plan_breakdown?.[plan.id] ?? 0;
-            const widthPercent = analytics?.active_subscriptions
-              ? Math.round((count / analytics.active_subscriptions) * 100)
-              : 0;
-            return (
-              <div key={plan.id}>
-                <div className="flex justify-between text-sm text-gray-700 mb-1">
-                  <span>{plan.name}</span>
-                  <span>{count}</span>
-                </div>
-                <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                  <div className="h-full bg-blue-500" style={{ width: `${widthPercent}%` }} />
-                </div>
-              </div>
-            );
-          })}
-        </div>
+      <section className="grid gap-5 lg:grid-cols-2">
+        <Card>
+          <CardHeader><h3 className="font-semibold text-navy-950">Revenue by plan</h3></CardHeader>
+          <CardBody className="h-[260px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={planBreakdown}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                <XAxis dataKey="plan" tick={{ fontSize: 11 }} />
+                <YAxis />
+                <Tooltip />
+                <Bar dataKey="revenue" fill="#D4AF37" radius={[6, 6, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardHeader><h3 className="font-semibold text-navy-950">Subscription performance</h3></CardHeader>
+          <CardBody className="h-[260px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={growthSeries}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                <XAxis dataKey="label" />
+                <YAxis />
+                <Tooltip />
+                <Line dataKey="value" stroke="#1a2332" strokeWidth={2.5} />
+              </LineChart>
+            </ResponsiveContainer>
+          </CardBody>
+        </Card>
       </section>
 
-      <section className="bg-white rounded-lg border border-gray-200 p-5">
-        <div className="flex items-center justify-between mb-4 gap-3">
-          <h3 className="text-lg font-semibold text-gray-900">User Management</h3>
+      <Card>
+        <CardHeader className="flex items-center justify-between gap-3">
+          <h3 className="font-semibold text-navy-950">User management</h3>
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search users..."
-            className="px-3 py-2 border border-gray-300 rounded-lg text-sm w-full max-w-xs"
+            placeholder="Search users"
+            className="rounded-xl border border-slatePremium-300 px-3 py-2 text-sm w-full max-w-xs"
           />
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-gray-500 border-b">
-                <th className="py-2">User</th>
-                <th className="py-2">Company</th>
-                <th className="py-2">Status</th>
-                <th className="py-2">Plan</th>
-                <th className="py-2">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredUsers.map((user) => (
-                <tr key={user.id} className="border-b align-top">
-                  <td className="py-2 pr-2">
-                    <div className="font-medium text-gray-900">{user.name || 'Unnamed user'}</div>
-                    <div className="text-xs text-gray-500">{user.id}</div>
-                  </td>
-                  <td className="py-2">{user.company || '-'}</td>
-                  <td className="py-2">{user.subscription_status || '-'}</td>
-                  <td className="py-2">{user.subscription?.plan_type || '-'}</td>
-                  <td className="py-2">
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handleGrantAccess(user.id)}
-                        className="px-2 py-1 rounded bg-emerald-100 text-emerald-700"
-                      >
-                        Grant
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleRevokeAccess(user.id)}
-                        className="px-2 py-1 rounded bg-red-100 text-red-700"
-                      >
-                        Revoke
-                      </button>
-                      <select
-                        defaultValue=""
-                        onChange={(e) => e.target.value && handleUpdateSubscription(user.id, e.target.value as PlanType)}
-                        className="px-2 py-1 border border-gray-300 rounded"
-                      >
-                        <option value="">Set plan...</option>
-                        {PLAN_CONFIGS.map((plan) => (
-                          <option key={plan.id} value={plan.id}>
-                            {plan.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </td>
+        </CardHeader>
+        <CardBody>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="text-left text-slatePremium-500">
+                <tr className="border-b border-slatePremium-200">
+                  <th className="pb-2">User</th>
+                  <th className="pb-2">Company</th>
+                  <th className="pb-2">Status</th>
+                  <th className="pb-2">Plan</th>
+                  <th className="pb-2">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-          {loading && <p className="text-sm text-gray-500 mt-4">Loading...</p>}
-        </div>
-      </section>
+              </thead>
+              <tbody>
+                {filteredUsers.map((user) => (
+                  <tr key={user.id} className="border-b border-slatePremium-100 align-top">
+                    <td className="py-2 pr-2"><div className="font-medium">{user.name || 'Unnamed user'}</div><div className="text-xs text-slatePremium-500">{user.id}</div></td>
+                    <td className="py-2">{user.company || '-'}</td>
+                    <td className="py-2">{user.subscription_status || '-'}</td>
+                    <td className="py-2">{user.subscription?.plan_type || '-'}</td>
+                    <td className="py-2">
+                      <div className="flex flex-wrap gap-2">
+                        <Button variant="outline" className="px-2 py-1 text-xs" onClick={() => handleGrantAccess(user.id)}>Grant</Button>
+                        <Button variant="danger" className="px-2 py-1 text-xs" onClick={() => handleRevokeAccess(user.id)}>Revoke</Button>
+                        <select
+                          defaultValue=""
+                          onChange={(e) => e.target.value && handleUpdateSubscription(user.id, e.target.value as PlanType)}
+                          className="rounded-lg border border-slatePremium-300 px-2 py-1 text-xs"
+                        >
+                          <option value="">Set plan...</option>
+                          {PLAN_CONFIGS.map((plan) => <option key={plan.id} value={plan.id}>{plan.name}</option>)}
+                        </select>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {loading && <p className="mt-4 text-sm text-slatePremium-500">Loading...</p>}
+          </div>
+        </CardBody>
+      </Card>
 
-      <section className="bg-white rounded-lg border border-gray-200 p-5">
-        <h3 className="text-lg font-semibold text-gray-900 mb-3">Organization Management</h3>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-gray-500 border-b">
-                <th className="py-2">Name</th>
-                <th className="py-2">Plan</th>
-                <th className="py-2">Owner</th>
-                <th className="py-2">Members</th>
-                <th className="py-2">Created</th>
-              </tr>
-            </thead>
-            <tbody>
-              {organizations.map((org) => (
-                <tr key={org.id} className="border-b">
-                  <td className="py-2">{org.name}</td>
-                  <td className="py-2">{org.plan_type}</td>
-                  <td className="py-2 text-xs text-gray-600">{org.owner_id}</td>
-                  <td className="py-2">{org.member_count}</td>
-                  <td className="py-2">{new Date(org.created_at).toLocaleDateString()}</td>
+      <Card>
+        <CardHeader><h3 className="font-semibold text-navy-950">Organization overview</h3></CardHeader>
+        <CardBody>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="text-left text-slatePremium-500">
+                <tr className="border-b border-slatePremium-200">
+                  <th className="pb-2">Name</th>
+                  <th className="pb-2">Plan</th>
+                  <th className="pb-2">Owner</th>
+                  <th className="pb-2">Members</th>
+                  <th className="pb-2">Created</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
+              </thead>
+              <tbody>
+                {organizations.map((org) => (
+                  <tr key={org.id} className="border-b border-slatePremium-100">
+                    <td className="py-2">{org.name}</td>
+                    <td className="py-2">{org.plan_type}</td>
+                    <td className="py-2 text-xs text-slatePremium-600">{org.owner_id}</td>
+                    <td className="py-2">{org.member_count}</td>
+                    <td className="py-2">{new Date(org.created_at).toLocaleDateString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </CardBody>
+      </Card>
     </div>
   );
 }

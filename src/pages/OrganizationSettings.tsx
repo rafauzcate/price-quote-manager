@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { manageOrganization, type SubscriptionStatusResponse } from '../lib/subscription';
+import { Card, CardBody, CardHeader } from '../components/ui/Card';
+import { Button } from '../components/ui/Button';
+import { Input } from '../components/ui/Input';
 
 interface OrganizationSettingsProps {
   subscriptionStatus: SubscriptionStatusResponse | null;
@@ -59,9 +62,7 @@ export function OrganizationSettings({ subscriptionStatus }: OrganizationSetting
       setOrganization(result.organization);
       setMessage('Organization created successfully.');
       setName('');
-      if (result.organization?.id) {
-        await loadMembers(result.organization.id);
-      }
+      if (result.organization?.id) await loadMembers(result.organization.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create organization');
     } finally {
@@ -117,123 +118,98 @@ export function OrganizationSettings({ subscriptionStatus }: OrganizationSetting
 
   if (!canManageOrg) {
     return (
-      <div className="bg-white rounded-lg border border-gray-200 p-6">
-        <h2 className="text-xl font-semibold text-gray-900 mb-2">Organization Settings</h2>
-        <p className="text-gray-600">Organization management is available for organization subscription plans.</p>
-      </div>
+      <Card>
+        <CardBody>
+          <h2 className="text-xl font-semibold text-navy-950">Organization Settings</h2>
+          <p className="mt-2 text-sm text-slatePremium-600">Organization management is available on organization subscription plans.</p>
+        </CardBody>
+      </Card>
     );
   }
 
   return (
     <div className="space-y-6">
-      {error && <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-sm">{error}</div>}
-      {message && <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-lg p-3 text-sm">{message}</div>}
+      {error && <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
+      {message && <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">{message}</div>}
 
-      <div className="bg-white rounded-lg border border-gray-200 p-5">
-        <h2 className="text-lg font-semibold text-gray-900 mb-3">Organization Profile</h2>
-        {organization?.id ? (
-          <p className="text-sm text-gray-700">
-            Organization ID: <span className="font-mono">{organization.id}</span>
-          </p>
-        ) : (
-          <div className="flex items-center gap-3">
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Organization name"
-              className="px-3 py-2 border border-gray-300 rounded-lg text-sm w-full max-w-md"
-            />
-            <button
-              type="button"
-              onClick={handleCreateOrganization}
-              disabled={loading}
-              className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm"
-            >
-              Create Organization
-            </button>
-          </div>
-        )}
-      </div>
+      <Card>
+        <CardHeader><h2 className="font-semibold text-navy-950">Organization Profile</h2></CardHeader>
+        <CardBody>
+          {organization?.id ? (
+            <div className="grid gap-3 md:grid-cols-2">
+              <Input label="Organization name" defaultValue={subscriptionStatus?.subscription?.plan_type?.toUpperCase() || 'Vantage Organization'} />
+              <Input label="Organization logo URL" placeholder="https://images-platform.99static.com//b5tJxitdv5ja3CjJ-9xncI7i8V0=/1002x1006:3151x3155/fit-in/590x590/projects-files/36/3698/369814/cd73592b-fbe6-46f0-b836-ecc852e09ca3.jpg" />
+              <p className="text-xs text-slatePremium-500 md:col-span-2">Organization ID: <span className="font-mono">{organization.id}</span></p>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-3 md:flex-row md:items-end">
+              <Input label="Organization Name" value={name} onChange={(e) => setName(e.target.value)} className="md:max-w-md" />
+              <Button type="button" onClick={handleCreateOrganization} disabled={loading}>Create Organization</Button>
+            </div>
+          )}
+        </CardBody>
+      </Card>
 
       {organization?.id && (
         <>
-          <div className="bg-white rounded-lg border border-gray-200 p-5">
-            <h3 className="text-lg font-semibold text-gray-900 mb-3">Invite Team Members</h3>
-            <div className="flex flex-col md:flex-row gap-3">
-              <input
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="teammate@company.com"
-                className="px-3 py-2 border border-gray-300 rounded-lg text-sm flex-1"
-              />
-              <select
-                value={role}
-                onChange={(e) => setRole(e.target.value as 'member' | 'admin')}
-                className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
-              >
-                <option value="member">Member</option>
-                <option value="admin">Admin</option>
-              </select>
-              <button
-                type="button"
-                onClick={handleInvite}
-                disabled={loading}
-                className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm"
-              >
-                Send Invite
-              </button>
-            </div>
-          </div>
+          <Card>
+            <CardHeader><h3 className="font-semibold text-navy-950">Invite Team Members</h3></CardHeader>
+            <CardBody>
+              <div className="grid gap-3 md:grid-cols-4">
+                <Input label="Email" value={email} onChange={(e) => setEmail(e.target.value)} className="md:col-span-2" />
+                <label className="space-y-1.5 text-sm">
+                  <span className="font-medium text-slatePremium-700">Role</span>
+                  <select value={role} onChange={(e) => setRole(e.target.value as 'member' | 'admin')} className="w-full rounded-xl border border-slatePremium-300 px-3 py-2.5">
+                    <option value="member">Member</option>
+                    <option value="admin">Admin</option>
+                  </select>
+                </label>
+                <div className="flex items-end"><Button type="button" onClick={handleInvite} disabled={loading} className="w-full">Send Invite</Button></div>
+              </div>
+            </CardBody>
+          </Card>
 
-          <div className="bg-white rounded-lg border border-gray-200 p-5">
-            <h3 className="text-lg font-semibold text-gray-900 mb-3">Team Members</h3>
-            <div className="space-y-2">
-              {members.map((member) => (
-                <div key={member.user_id} className="border border-gray-100 rounded-lg p-3 flex justify-between items-center">
-                  <div>
-                    <p className="text-sm font-medium text-gray-900">{member.user_id}</p>
-                    <p className="text-xs text-gray-500">Role: {member.role}</p>
+          <div className="grid gap-5 xl:grid-cols-2">
+            <Card>
+              <CardHeader><h3 className="font-semibold text-navy-950">Team Members</h3></CardHeader>
+              <CardBody className="space-y-2">
+                {members.map((member) => (
+                  <div key={member.user_id} className="flex items-center justify-between rounded-xl border border-slatePremium-200 p-3">
+                    <div>
+                      <p className="font-medium text-slatePremium-900">{member.user_id}</p>
+                      <p className="text-xs text-slatePremium-500">Role: {member.role}</p>
+                    </div>
+                    <Button variant="danger" className="px-2 py-1 text-xs" onClick={() => handleRemoveMember(member.user_id)}>Remove</Button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveMember(member.user_id)}
-                    className="text-xs px-2 py-1 rounded bg-red-100 text-red-700"
-                  >
-                    Remove
-                  </button>
-                </div>
-              ))}
-              {members.length === 0 && <p className="text-sm text-gray-500">No members yet.</p>}
-            </div>
-          </div>
+                ))}
+                {members.length === 0 && <p className="text-sm text-slatePremium-500">No members yet.</p>}
+              </CardBody>
+            </Card>
 
-          <div className="bg-white rounded-lg border border-gray-200 p-5">
-            <h3 className="text-lg font-semibold text-gray-900 mb-3">Pending Invites</h3>
-            <div className="space-y-2">
-              {invites.map((invite) => (
-                <div key={invite.id} className="border border-gray-100 rounded-lg p-3">
-                  <p className="text-sm font-medium text-gray-900">{invite.email}</p>
-                  <p className="text-xs text-gray-500">
-                    {invite.role} • {invite.status} • expires {new Date(invite.expires_at).toLocaleDateString()}
-                  </p>
-                </div>
-              ))}
-              {invites.length === 0 && <p className="text-sm text-gray-500">No pending invites.</p>}
-            </div>
+            <Card>
+              <CardHeader><h3 className="font-semibold text-navy-950">Pending Invites</h3></CardHeader>
+              <CardBody className="space-y-2">
+                {invites.map((invite) => (
+                  <div key={invite.id} className="rounded-xl border border-slatePremium-200 p-3">
+                    <p className="font-medium text-slatePremium-900">{invite.email}</p>
+                    <p className="text-xs text-slatePremium-500">{invite.role} • {invite.status} • expires {new Date(invite.expires_at).toLocaleDateString()}</p>
+                  </div>
+                ))}
+                {invites.length === 0 && <p className="text-sm text-slatePremium-500">No pending invites.</p>}
+              </CardBody>
+            </Card>
           </div>
         </>
       )}
 
-      <div className="bg-white rounded-lg border border-gray-200 p-5">
-        <h3 className="text-lg font-semibold text-gray-900 mb-2">Subscription Details</h3>
-        <p className="text-sm text-gray-700">Current plan: {subscriptionStatus?.subscription?.plan_type || 'N/A'}</p>
-        <p className="text-sm text-gray-700">
-          Next billing date:{' '}
-          {subscriptionStatus?.subscription?.current_period_end
-            ? new Date(subscriptionStatus.subscription.current_period_end).toLocaleDateString()
-            : 'N/A'}
-        </p>
-      </div>
+      <Card>
+        <CardHeader><h3 className="font-semibold text-navy-950">Subscription Details</h3></CardHeader>
+        <CardBody className="space-y-1 text-sm text-slatePremium-700">
+          <p>Current plan: <span className="font-semibold">{subscriptionStatus?.subscription?.plan_type || 'N/A'}</span></p>
+          <p>Subscription status: <span className="font-semibold">{subscriptionStatus?.profile.subscription_status || 'N/A'}</span></p>
+          <p>Trial days remaining: <span className="font-semibold">{subscriptionStatus?.trial_days_remaining ?? 0}</span></p>
+        </CardBody>
+      </Card>
     </div>
   );
 }
