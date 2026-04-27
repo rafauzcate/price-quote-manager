@@ -639,6 +639,7 @@ export function ProtectedApp() {
                             loading={quotesLoading}
                             onDeleteQuote={handleDeleteQuote}
                             onCreateQuote={handleCreateQuote}
+                            onQuoteUpdated={() => fetchQuotes({ force: true })}
                             userName={userProfile?.name}
                             userEmail={user?.email}
                             userCompany={userProfile?.company}

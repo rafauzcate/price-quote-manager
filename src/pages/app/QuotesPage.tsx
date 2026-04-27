@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { Download, Eye, FileText, Filter, Loader2, Plus, Trash2, UploadCloud } from 'lucide-react';
+import { Download, Eye, FileText, Filter, Loader2, Pencil, Plus, Trash2, UploadCloud } from 'lucide-react';
 
 import { formatCurrency, formatDate, quoteStatus } from '../../lib/format';
 import type { Quote } from '../../types/app';
@@ -9,22 +9,33 @@ import { Button } from '../../components/ui/Button';
 import { Card, CardBody, CardHeader } from '../../components/ui/Card';
 import { Input } from '../../components/ui/Input';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { QuoteEditModal } from '../../components/QuoteEditModal';
 
 interface QuotesPageProps {
   quotes: Quote[];
   loading?: boolean;
   onDeleteQuote: (quoteId: string) => Promise<void>;
   onCreateQuote: (data: { fileContent: string; referenceName: string; referenceNumber: string; file?: File; fileName?: string }) => Promise<void>;
+  onQuoteUpdated?: () => Promise<void> | void;
   userName?: string;
   userEmail?: string;
   userCompany?: string;
 }
 
-export function QuotesPage({ quotes, loading, onDeleteQuote, onCreateQuote, userName, userEmail, userCompany }: QuotesPageProps) {
+export function QuotesPage({
+  quotes,
+  loading,
+  onDeleteQuote,
+  onCreateQuote,
+  onQuoteUpdated,
+  userName,
+  userEmail,
+  userCompany,
+}: QuotesPageProps) {
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState<'created_at' | 'supplier' | 'value'>('created_at');
   const [selected, setSelected] = useState<string[]>([]);
-  const [activeQuote, setActiveQuote] = useState<Quote | null>(null);
+  const [editingQuote, setEditingQuote] = useState<Quote | null>(null);
   const [creating, setCreating] = useState(false);
   const [referenceName, setReferenceName] = useState('');
   const [referenceNumber, setReferenceNumber] = useState('');
@@ -90,6 +101,18 @@ export function QuotesPage({ quotes, loading, onDeleteQuote, onCreateQuote, user
       userCompany,
     });
   };
+
+  const toggleSelected = (quoteId: string, checked: boolean) => {
+    setSelected((prev) => {
+      if (checked) {
+        if (prev.includes(quoteId)) return prev;
+        return [...prev, quoteId];
+      }
+      return prev.filter((id) => id !== quoteId);
+    });
+  };
+
+  const allVisibleSelected = paginated.length > 0 && paginated.every((quote) => selected.includes(quote.id));
 
   return (
     <div className="space-y-6">
@@ -157,7 +180,13 @@ export function QuotesPage({ quotes, loading, onDeleteQuote, onCreateQuote, user
               <table className="min-w-full text-sm">
                 <thead className="bg-slatePremium-50 text-left text-slatePremium-500">
                   <tr>
-                    <th className="px-3 py-2"><input type="checkbox" checked={selected.length === paginated.length} onChange={(e) => setSelected(e.target.checked ? paginated.map((q) => q.id) : [])} /></th>
+                    <th className="px-3 py-2">
+                      <input
+                        type="checkbox"
+                        checked={allVisibleSelected}
+                        onChange={(e) => setSelected(e.target.checked ? paginated.map((q) => q.id) : [])}
+                      />
+                    </th>
                     <th className="px-3 py-2">Reference</th>
                     <th className="px-3 py-2">Supplier</th>
                     <th className="px-3 py-2">Status</th>
@@ -167,27 +196,111 @@ export function QuotesPage({ quotes, loading, onDeleteQuote, onCreateQuote, user
                   </tr>
                 </thead>
                 <tbody>
-                  {paginated.map((quote) => (
-                    <tr key={quote.id} className="border-t border-slatePremium-100 hover:bg-slatePremium-50" title={quote.part_description || 'Quote preview'}>
-                      <td className="px-3 py-2"><input type="checkbox" checked={selected.includes(quote.id)} onChange={(e) => setSelected((prev) => (e.target.checked ? [...prev, quote.id] : prev.filter((id) => id !== quote.id)))} /></td>
-                      <td className="px-3 py-2">
-                        <p className="font-medium text-slatePremium-900">{quote.reference_name}</p>
-                        <p className="text-xs text-slatePremium-500">{quote.generated_part_number}</p>
-                      </td>
-                      <td className="px-3 py-2">{quote.supplier}</td>
-                      <td className="px-3 py-2">
-                        <Badge variant={quoteStatus(quote.expires_at) === 'Expired' ? 'danger' : 'success'}>{quoteStatus(quote.expires_at)}</Badge>
-                      </td>
-                      <td className="px-3 py-2 font-semibold">{formatCurrency(quote.order_total || quote.price || 0)}</td>
-                      <td className="px-3 py-2">{formatDate(quote.created_at)}</td>
-                      <td className="px-3 py-2">
-                        <div className="flex justify-end gap-1">
-                          <button className="rounded p-1 hover:bg-slatePremium-200" onClick={() => setActiveQuote(quote)} aria-label="preview"><Eye size={15} /></button>
-                          <button className="rounded p-1 hover:bg-red-100 text-red-600" onClick={() => onDeleteQuote(quote.id)} aria-label="delete"><Trash2 size={15} /></button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                  {paginated.map((quote) => {
+                    const isSelected = selected.includes(quote.id);
+
+                    return (
+                      <Fragment key={quote.id}>
+                        <tr className="border-t border-slatePremium-100 hover:bg-slatePremium-50" title={quote.part_description || 'Quote preview'}>
+                          <td className="px-3 py-2 align-top">
+                            <input type="checkbox" checked={isSelected} onChange={(e) => toggleSelected(quote.id, e.target.checked)} />
+                          </td>
+                          <td className="px-3 py-2">
+                            <p className="font-medium text-slatePremium-900">{quote.reference_name}</p>
+                            <p className="text-xs text-slatePremium-500">{quote.generated_part_number}</p>
+                            <p className="mt-1 text-xs text-slatePremium-600">
+                              <span className="font-semibold">Notes:</span> {quote.notes?.trim() ? quote.notes : 'No notes added'}
+                            </p>
+                          </td>
+                          <td className="px-3 py-2 align-top">{quote.supplier}</td>
+                          <td className="px-3 py-2 align-top">
+                            <Badge variant={quoteStatus(quote.expires_at) === 'Expired' ? 'danger' : 'success'}>{quoteStatus(quote.expires_at)}</Badge>
+                          </td>
+                          <td className="px-3 py-2 align-top font-semibold">{formatCurrency(quote.order_total || quote.price || 0)}</td>
+                          <td className="px-3 py-2 align-top">{formatDate(quote.created_at)}</td>
+                          <td className="px-3 py-2 align-top">
+                            <div className="flex justify-end gap-1">
+                              <button
+                                className="rounded p-1 hover:bg-slatePremium-200"
+                                onClick={() => toggleSelected(quote.id, !isSelected)}
+                                aria-label="preview"
+                                title={isSelected ? 'Hide preview' : 'Show preview'}
+                              >
+                                <Eye size={15} />
+                              </button>
+                              <button
+                                className="rounded p-1 text-blue-700 hover:bg-blue-100"
+                                onClick={() => setEditingQuote(quote)}
+                                aria-label="edit"
+                                title="Edit quote"
+                              >
+                                <Pencil size={15} />
+                              </button>
+                              <button
+                                className="rounded p-1 text-red-600 hover:bg-red-100"
+                                onClick={() => onDeleteQuote(quote.id)}
+                                aria-label="delete"
+                                title="Delete quote"
+                              >
+                                <Trash2 size={15} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+
+                        {isSelected ? (
+                          <tr className="border-t border-slatePremium-100 bg-slatePremium-50/60">
+                            <td />
+                            <td colSpan={6} className="px-3 py-3">
+                              <div className="grid gap-4 lg:grid-cols-2">
+                                <div className="space-y-2 text-sm text-slatePremium-700">
+                                  <p><span className="font-semibold">Reference:</span> {quote.reference_name}</p>
+                                  <p><span className="font-semibold">Supplier:</span> {quote.supplier}</p>
+                                  <p><span className="font-semibold">Contact:</span> {quote.supplier_contact_name || quote.contact_person || 'N/A'}</p>
+                                  <p><span className="font-semibold">Email:</span> {quote.supplier_email || 'N/A'}</p>
+                                  <p><span className="font-semibold">Phone:</span> {quote.supplier_phone || 'N/A'}</p>
+                                  <p><span className="font-semibold">Notes:</span> {quote.notes?.trim() ? quote.notes : 'No notes added'}</p>
+                                  <div className="mt-2 flex flex-wrap gap-2">
+                                    <Button variant="outline" onClick={() => setEditingQuote(quote)} leftIcon={<Pencil size={14} />}>
+                                      Edit
+                                    </Button>
+                                    <Button variant="danger" onClick={() => onDeleteQuote(quote.id)} leftIcon={<Trash2 size={14} />}>
+                                      Delete
+                                    </Button>
+                                  </div>
+                                </div>
+                                <div className="overflow-auto rounded-xl border border-slatePremium-200 bg-white">
+                                  <table className="min-w-full text-sm">
+                                    <thead className="bg-slatePremium-50">
+                                      <tr>
+                                        <th className="px-3 py-2 text-left">Item</th>
+                                        <th className="px-3 py-2 text-right">Qty</th>
+                                        <th className="px-3 py-2 text-right">Net</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {(quote.line_items || []).map((item) => (
+                                        <tr key={item.id} className="border-t border-slatePremium-100">
+                                          <td className="px-3 py-2">{item.description}</td>
+                                          <td className="px-3 py-2 text-right">{item.quantity}</td>
+                                          <td className="px-3 py-2 text-right">{formatCurrency(item.net_price)}</td>
+                                        </tr>
+                                      ))}
+                                      {(quote.line_items || []).length === 0 && (
+                                        <tr>
+                                          <td className="px-3 py-4 text-slatePremium-500" colSpan={3}>No line items parsed for this quote.</td>
+                                        </tr>
+                                      )}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        ) : null}
+                      </Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -195,50 +308,15 @@ export function QuotesPage({ quotes, loading, onDeleteQuote, onCreateQuote, user
         </CardBody>
       </Card>
 
-      {activeQuote && (
-        <Card>
-          <CardHeader className="flex items-center justify-between">
-            <h3 className="font-semibold text-navy-950">Quote detail preview</h3>
-            <Button variant="ghost" onClick={() => setActiveQuote(null)}>
-              Close
-            </Button>
-          </CardHeader>
-          <CardBody className="grid gap-6 lg:grid-cols-2">
-            <div className="space-y-2 text-sm text-slatePremium-700">
-              <p><span className="font-semibold">Reference:</span> {activeQuote.reference_name}</p>
-              <p><span className="font-semibold">Supplier:</span> {activeQuote.supplier}</p>
-              <p><span className="font-semibold">Contact:</span> {activeQuote.supplier_contact_name || activeQuote.contact_person || 'N/A'}</p>
-              <p><span className="font-semibold">Email:</span> {activeQuote.supplier_email || 'N/A'}</p>
-              <p><span className="font-semibold">Phone:</span> {activeQuote.supplier_phone || 'N/A'}</p>
-            </div>
-            <div className="overflow-auto rounded-xl border border-slatePremium-200">
-              <table className="min-w-full text-sm">
-                <thead className="bg-slatePremium-50">
-                  <tr>
-                    <th className="px-3 py-2 text-left">Item</th>
-                    <th className="px-3 py-2 text-right">Qty</th>
-                    <th className="px-3 py-2 text-right">Net</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(activeQuote.line_items || []).map((item) => (
-                    <tr key={item.id} className="border-t border-slatePremium-100">
-                      <td className="px-3 py-2">{item.description}</td>
-                      <td className="px-3 py-2 text-right">{item.quantity}</td>
-                      <td className="px-3 py-2 text-right">{formatCurrency(item.net_price)}</td>
-                    </tr>
-                  ))}
-                  {(activeQuote.line_items || []).length === 0 && (
-                    <tr>
-                      <td className="px-3 py-4 text-slatePremium-500" colSpan={3}>No line items parsed for this quote.</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </CardBody>
-        </Card>
-      )}
+      <QuoteEditModal
+        quote={editingQuote}
+        isOpen={!!editingQuote}
+        onClose={() => setEditingQuote(null)}
+        onSave={() => {
+          setEditingQuote(null);
+          onQuoteUpdated?.();
+        }}
+      />
     </div>
   );
 }
