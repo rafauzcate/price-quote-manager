@@ -1,15 +1,48 @@
-import { type ReactNode } from 'react';
+import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { AlertTriangle, Clock3 } from 'lucide-react';
-import type { SubscriptionStatusResponse } from '../lib/subscription';
+import { isSuperAdmin, type SubscriptionStatusResponse } from '../lib/subscription';
 
 interface SubscriptionGateProps {
   status: SubscriptionStatusResponse | null;
   loading: boolean;
   onUpgradeClick: () => void;
   children: ReactNode;
+  userEmail?: string | null;
 }
 
-export function SubscriptionGate({ status, loading, onUpgradeClick, children }: SubscriptionGateProps) {
+interface SubscriptionGateErrorBoundaryState {
+  hasError: boolean;
+}
+
+class SubscriptionGateErrorBoundary extends Component<{ children: ReactNode }, SubscriptionGateErrorBoundaryState> {
+  state: SubscriptionGateErrorBoundaryState = { hasError: false };
+
+  static getDerivedStateFromError(): SubscriptionGateErrorBoundaryState {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error('SubscriptionGate render error:', error, info);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return this.props.children;
+    }
+
+    return this.props.children;
+  }
+}
+
+export function SubscriptionGate({ status, loading, onUpgradeClick, children, userEmail }: SubscriptionGateProps) {
+  const superadminByEmail = isSuperAdmin(userEmail);
+  const isKnownSuperadmin = superadminByEmail || status?.is_superadmin;
+
+  // Critical: superadmin bypass must run before any loading/subscription checks.
+  if (isKnownSuperadmin) {
+    return <SubscriptionGateErrorBoundary>{children}</SubscriptionGateErrorBoundary>;
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-gray-100 flex items-center justify-center">
@@ -42,7 +75,7 @@ export function SubscriptionGate({ status, loading, onUpgradeClick, children }: 
   }
 
   return (
-    <>
+    <SubscriptionGateErrorBoundary>
       {status.trial_days_remaining > 0 && !status.is_superadmin && (
         <div className="bg-blue-50 border-b border-blue-200 px-4 py-2 text-sm text-blue-800 flex items-center justify-center gap-2">
           <Clock3 className="w-4 h-4" />
@@ -50,6 +83,6 @@ export function SubscriptionGate({ status, loading, onUpgradeClick, children }: 
         </div>
       )}
       {children}
-    </>
+    </SubscriptionGateErrorBoundary>
   );
 }

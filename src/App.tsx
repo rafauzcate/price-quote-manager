@@ -1,9 +1,9 @@
-import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import type { User } from '@supabase/supabase-js';
 import { Toaster, toast } from 'sonner';
 import { supabase } from './lib/supabase';
-import { fetchSubscriptionStatus, type SubscriptionStatusResponse } from './lib/subscription';
+import { fetchSubscriptionStatus, isSuperAdmin, type SubscriptionStatusResponse } from './lib/subscription';
 import { generateFileHash, checkDuplicateFile } from './lib/duplicateDetection';
 import { LandingPage } from './pages/LandingPage';
 import { AuthPage } from './pages/AuthPage';
@@ -44,22 +44,74 @@ function AppRouter() {
   const location = useLocation();
   const navigate = useNavigate();
 
+  const subscriptionDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const subscriptionRequestIdRef = useRef(0);
+  const quotesRequestIdRef = useRef(0);
+  const userProfileRef = useRef<UserProfile | null>(null);
+
   const refreshSubscriptionStatus = useCallback(
     async (profile?: UserProfile | null) => {
-      if (!user) {
+      const activeUser = user ?? (await supabase.auth.getUser()).data.user;
+
+      if (!activeUser) {
         setSubscriptionStatus(null);
         setSubscriptionLoading(false);
         return;
       }
 
+      if (subscriptionDebounceTimerRef.current) {
+        clearTimeout(subscriptionDebounceTimerRef.current);
+      }
+
       setSubscriptionLoading(true);
+      const requestId = ++subscriptionRequestIdRef.current;
+
+      await new Promise<void>((resolve) => {
+        subscriptionDebounceTimerRef.current = setTimeout(() => resolve(), 250);
+      });
+
+      if (requestId !== subscriptionRequestIdRef.current) {
+        return;
+      }
+
+      const emailIsSuperadmin = isSuperAdmin(activeUser.email);
+      const profileIsSuperadmin = Boolean(profile?.is_superadmin);
+      const resolvedIsSuperadmin = emailIsSuperadmin || profileIsSuperadmin;
+
+      if (resolvedIsSuperadmin) {
+        const superadminStatus: SubscriptionStatusResponse = {
+          has_access: true,
+          access_reason: 'superadmin',
+          is_superadmin: true,
+          profile: {
+            subscription_status: profile?.subscription_status || 'active',
+            trial_ends_at: profile?.trial_ends_at || null,
+            organization_id: profile?.organization_id || null,
+          },
+          subscription: null,
+          permissions: {
+            can_use_all_features: true,
+            can_manage_admin_dashboard: true,
+            can_manage_organization: true,
+          },
+          trial_days_remaining: 0,
+        };
+
+        if (requestId === subscriptionRequestIdRef.current) {
+          setSubscriptionStatus(superadminStatus);
+          setSubscriptionLoading(false);
+        }
+        return;
+      }
+
       try {
         const status = await fetchSubscriptionStatus();
-        setSubscriptionStatus(status);
 
-        if (!status.has_access && !status.is_superadmin && location.pathname.startsWith('/app')) {
-          navigate('/pricing');
+        if (requestId !== subscriptionRequestIdRef.current) {
+          return;
         }
+
+        setSubscriptionStatus(status);
       } catch (err) {
         console.warn('Unable to fetch subscription status, using fallback', err);
         const trialDate = profile?.trial_ends_at;
@@ -70,7 +122,7 @@ function AppRouter() {
         const fallback: SubscriptionStatusResponse = {
           has_access: daysLeft > 0,
           access_reason: daysLeft > 0 ? 'local_trial_fallback' : 'no_access',
-          is_superadmin: !!profile?.is_superadmin,
+          is_superadmin: false,
           profile: {
             subscription_status: profile?.subscription_status || 'trialing',
             trial_ends_at: profile?.trial_ends_at || null,
@@ -79,82 +131,134 @@ function AppRouter() {
           subscription: null,
           permissions: {
             can_use_all_features: daysLeft > 0,
-            can_manage_admin_dashboard: !!profile?.is_superadmin,
+            can_manage_admin_dashboard: false,
             can_manage_organization: false,
           },
           trial_days_remaining: daysLeft,
         };
 
-        setSubscriptionStatus(fallback);
+        if (requestId === subscriptionRequestIdRef.current) {
+          setSubscriptionStatus(fallback);
+          toast.error('Subscription check failed temporarily. Using local access fallback.');
+        }
       } finally {
-        setSubscriptionLoading(false);
+        if (requestId === subscriptionRequestIdRef.current) {
+          setSubscriptionLoading(false);
+        }
       }
     },
-    [location.pathname, navigate, user],
+    [user],
   );
 
   const fetchQuotes = useCallback(async () => {
     if (!user) return;
+
+    const requestId = ++quotesRequestIdRef.current;
     setQuotesLoading(true);
 
-    const { data: quotesData, error: quotesError } = await supabase
-      .from('quotes')
-      .select('*')
-      .order('created_at', { ascending: false });
+    try {
+      const { data: quotesData, error: quotesError } = await supabase
+        .from('quotes')
+        .select('*')
+        .order('created_at', { ascending: false });
 
-    if (quotesError) {
-      toast.error(`Failed to load quotes: ${quotesError.message}`);
-      setQuotesLoading(false);
-      return;
-    }
+      if (quotesError) {
+        throw quotesError;
+      }
 
-    const merged = await Promise.all(
-      (quotesData || []).map(async (quote) => {
-        const { data: lineItems } = await supabase
+      const quoteIds = (quotesData || []).map((quote) => quote.id);
+      let lineItemsByQuoteId = new Map<string, any[]>();
+
+      if (quoteIds.length > 0) {
+        const { data: allLineItems, error: lineItemsError } = await supabase
           .from('quote_line_items')
           .select('*')
-          .eq('quote_id', quote.id)
+          .in('quote_id', quoteIds)
           .order('created_at', { ascending: true });
-        return { ...quote, line_items: lineItems || [] };
-      }),
-    );
 
-    setQuotes(merged as Quote[]);
-    setQuotesLoading(false);
+        if (lineItemsError) {
+          throw lineItemsError;
+        }
+
+        lineItemsByQuoteId = (allLineItems || []).reduce((acc, item) => {
+          const existing = acc.get(item.quote_id) || [];
+          existing.push(item);
+          acc.set(item.quote_id, existing);
+          return acc;
+        }, new Map<string, any[]>());
+      }
+
+      const merged = (quotesData || []).map((quote) => ({
+        ...quote,
+        line_items: lineItemsByQuoteId.get(quote.id) || [],
+      }));
+
+      if (requestId === quotesRequestIdRef.current) {
+        setQuotes(merged as Quote[]);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      toast.error(`Failed to load quotes: ${message}`);
+      console.error('Failed to load quotes', error);
+    } finally {
+      if (requestId === quotesRequestIdRef.current) {
+        setQuotesLoading(false);
+      }
+    }
   }, [user]);
 
   const fetchUserProfile = useCallback(
     async (userId: string) => {
-      const { data: profile } = await supabase.from('user_profiles').select('*').eq('id', userId).maybeSingle();
+      try {
+        const { data: profile, error: profileError } = await supabase.from('user_profiles').select('*').eq('id', userId).maybeSingle();
 
-      if (profile) {
-        setUserProfile(profile);
-        await refreshSubscriptionStatus(profile);
-      } else {
-        const { data: newProfile } = await supabase
-          .from('user_profiles')
-          .insert([
-            {
-              id: userId,
-              name: '',
-              company: '',
-              last_login: new Date().toISOString(),
-              signup_date: new Date().toISOString(),
-            },
-          ])
-          .select()
-          .single();
-
-        if (newProfile) {
-          setUserProfile(newProfile);
-          await refreshSubscriptionStatus(newProfile);
+        if (profileError) {
+          throw profileError;
         }
-      }
 
-      await supabase.from('user_profiles').update({ last_login: new Date().toISOString() }).eq('id', userId);
+        if (profile) {
+          setUserProfile(profile);
+          await refreshSubscriptionStatus(profile);
+        } else {
+          const { data: newProfile, error: createProfileError } = await supabase
+            .from('user_profiles')
+            .insert([
+              {
+                id: userId,
+                name: '',
+                company: '',
+                last_login: new Date().toISOString(),
+                signup_date: new Date().toISOString(),
+              },
+            ])
+            .select()
+            .single();
+
+          if (createProfileError) {
+            throw createProfileError;
+          }
+
+          if (newProfile) {
+            setUserProfile(newProfile);
+            await refreshSubscriptionStatus(newProfile);
+          }
+        }
+
+        const { error: updateLoginError } = await supabase.from('user_profiles').update({ last_login: new Date().toISOString() }).eq('id', userId);
+        if (updateLoginError) {
+          console.warn('Unable to update last_login timestamp', updateLoginError);
+        }
+      } catch (error) {
+        console.error('Failed to load user profile', error);
+        toast.error('Unable to load your profile. Please refresh the page.');
+      }
     },
     [refreshSubscriptionStatus],
   );
+
+  useEffect(() => {
+    userProfileRef.current = userProfile;
+  }, [userProfile]);
 
   useEffect(() => {
     const init = async () => {
@@ -172,11 +276,16 @@ function AppRouter() {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
       (async () => {
         setUser(session?.user ?? null);
+
         if (session?.user) {
-          await fetchUserProfile(session.user.id);
+          if (event === 'TOKEN_REFRESHED') {
+            await refreshSubscriptionStatus(userProfileRef.current);
+          } else {
+            await fetchUserProfile(session.user.id);
+          }
         } else {
           setSubscriptionStatus(null);
           setUserProfile(null);
@@ -186,11 +295,34 @@ function AppRouter() {
     });
 
     return () => subscription.unsubscribe();
-  }, [fetchUserProfile]);
+  }, [fetchUserProfile, refreshSubscriptionStatus]);
 
   useEffect(() => {
     if (user && subscriptionStatus?.has_access) fetchQuotes();
   }, [fetchQuotes, subscriptionStatus?.has_access, user]);
+
+  useEffect(() => {
+    return () => {
+      if (subscriptionDebounceTimerRef.current) {
+        clearTimeout(subscriptionDebounceTimerRef.current);
+      }
+    };
+  }, []);
+
+  const isCurrentUserSuperadmin = isSuperAdmin(user?.email) || Boolean(subscriptionStatus?.is_superadmin);
+
+  useEffect(() => {
+    if (!user || subscriptionLoading) return;
+
+    if (location.pathname === '/pricing' && isCurrentUserSuperadmin) {
+      navigate('/app/dashboard', { replace: true });
+      return;
+    }
+
+    if (location.pathname.startsWith('/app') && !subscriptionStatus?.has_access && !isCurrentUserSuperadmin) {
+      navigate('/pricing', { replace: true });
+    }
+  }, [isCurrentUserSuperadmin, location.pathname, navigate, subscriptionLoading, subscriptionStatus?.has_access, user]);
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
@@ -320,7 +452,7 @@ function AppRouter() {
     await fetchQuotes();
   };
 
-  const canEnterApp = !!user && !!subscriptionStatus?.has_access;
+  const canEnterApp = !!user && (isCurrentUserSuperadmin || !!subscriptionStatus?.has_access);
   const isAuthRoute = ['/login', '/signup', '/reset-password'].includes(location.pathname);
 
   if (authLoading) {

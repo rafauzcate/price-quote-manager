@@ -46,6 +46,17 @@ export const PLAN_CONFIGS: PlanConfig[] = [
   },
 ];
 
+const SUPERADMIN_EMAILS = new Set(['rafael.uzcategui@gmail.com', 'hello@vantageprojectsolution.co.uk']);
+const SUBSCRIPTION_STATUS_CACHE_TTL_MS = 10_000;
+
+let subscriptionStatusInFlight: Promise<SubscriptionStatusResponse> | null = null;
+let subscriptionStatusCache: { data: SubscriptionStatusResponse; timestamp: number } | null = null;
+
+export function isSuperAdmin(email?: string | null): boolean {
+  if (!email) return false;
+  return SUPERADMIN_EMAILS.has(email.trim().toLowerCase());
+}
+
 export interface SubscriptionStatusResponse {
   has_access: boolean;
   access_reason: string;
@@ -76,6 +87,24 @@ function getFunctionBaseUrl() {
   return `${supabaseUrl}/functions/v1`;
 }
 
+function isRetryableError(status?: number, message?: string): boolean {
+  if (status === 429 || (status !== undefined && status >= 500)) return true;
+
+  if (!message) return false;
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes('failed to fetch') ||
+    normalized.includes('networkerror') ||
+    normalized.includes('network request failed') ||
+    normalized.includes('err_insufficient_resources') ||
+    normalized.includes('insufficient_resources')
+  );
+}
+
+async function delay(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function authedFetch(functionPath: string, init?: RequestInit) {
   const {
     data: { session },
@@ -85,27 +114,84 @@ async function authedFetch(functionPath: string, init?: RequestInit) {
     throw new Error('Authentication token not available');
   }
 
-  const response = await fetch(`${getFunctionBaseUrl()}${functionPath}`, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${session.access_token}`,
-      ...(init?.headers || {}),
-    },
-  });
+  const maxAttempts = 3;
+  let lastError: Error | null = null;
 
-  const responseText = await response.text();
-  const data = responseText ? JSON.parse(responseText) : null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      const response = await fetch(`${getFunctionBaseUrl()}${functionPath}`, {
+        ...init,
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+          ...(init?.headers || {}),
+        },
+      });
 
-  if (!response.ok) {
-    throw new Error(data?.error || `Request failed (${response.status})`);
+      const responseText = await response.text();
+      let data: any = null;
+      if (responseText) {
+        try {
+          data = JSON.parse(responseText);
+        } catch {
+          data = null;
+        }
+      }
+
+      if (!response.ok) {
+        const apiError = new Error(data?.error || `Request failed (${response.status})`);
+        if (attempt < maxAttempts && isRetryableError(response.status, apiError.message)) {
+          await delay(300 * attempt);
+          continue;
+        }
+        throw apiError;
+      }
+
+      return data;
+    } catch (error) {
+      const normalizedError = error instanceof Error ? error : new Error('Unknown request error');
+      lastError = normalizedError;
+
+      if (attempt < maxAttempts && isRetryableError(undefined, normalizedError.message)) {
+        await delay(300 * attempt);
+        continue;
+      }
+
+      throw normalizedError;
+    }
   }
 
-  return data;
+  throw lastError || new Error('Request failed after retries');
 }
 
-export async function fetchSubscriptionStatus(): Promise<SubscriptionStatusResponse> {
-  return await authedFetch('/check-subscription-status', { method: 'GET' });
+export async function fetchSubscriptionStatus(options?: { force?: boolean }): Promise<SubscriptionStatusResponse> {
+  const force = options?.force ?? false;
+  const now = Date.now();
+
+  if (!force && subscriptionStatusCache && now - subscriptionStatusCache.timestamp < SUBSCRIPTION_STATUS_CACHE_TTL_MS) {
+    return subscriptionStatusCache.data;
+  }
+
+  if (!force && subscriptionStatusInFlight) {
+    return subscriptionStatusInFlight;
+  }
+
+  subscriptionStatusInFlight = (async () => {
+    const data = await authedFetch('/check-subscription-status', { method: 'GET' });
+    subscriptionStatusCache = { data, timestamp: Date.now() };
+    return data;
+  })();
+
+  try {
+    return await subscriptionStatusInFlight;
+  } finally {
+    subscriptionStatusInFlight = null;
+  }
+}
+
+export function clearSubscriptionStatusCache(): void {
+  subscriptionStatusCache = null;
+  subscriptionStatusInFlight = null;
 }
 
 export async function createCheckoutSession(planType: PlanType): Promise<{ checkout_url: string; session_id: string }> {
@@ -119,6 +205,7 @@ export async function createCheckoutSession(planType: PlanType): Promise<{ check
     throw new Error(result.error.message || 'Failed to create checkout session');
   }
 
+  clearSubscriptionStatusCache();
   return result.data;
 }
 
