@@ -8,6 +8,33 @@
 */
 
 -- ---------------------------------------------------------------------------
+-- Preflight: ensure columns referenced by helper functions exist
+-- ---------------------------------------------------------------------------
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'user_profiles' AND column_name = 'is_superadmin'
+  ) THEN
+    ALTER TABLE public.user_profiles
+      ADD COLUMN is_superadmin boolean NOT NULL DEFAULT false;
+  END IF;
+END $$;
+
+-- Ensure updated_at trigger helper exists
+CREATE OR REPLACE FUNCTION public.update_updated_at_column()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth, pg_temp
+AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$;
+
+-- ---------------------------------------------------------------------------
 -- Helpers
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.current_user_is_superadmin(p_user_id uuid DEFAULT auth.uid())
