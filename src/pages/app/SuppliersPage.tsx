@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Building2, Mail, Phone, Search } from 'lucide-react';
 import type { Quote } from '../../types/app';
 import { Card, CardBody, CardHeader } from '../../components/ui/Card';
@@ -12,8 +13,32 @@ interface SuppliersPageProps {
 }
 
 export function SuppliersPage({ quotes }: SuppliersPageProps) {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [query, setQuery] = useState('');
   const [selectedSupplier, setSelectedSupplier] = useState<string | null>(null);
+
+  useEffect(() => {
+    const search = searchParams.get('search') || '';
+    const supplier = searchParams.get('supplier');
+
+    setQuery(search);
+    setSelectedSupplier(supplier || null);
+  }, [searchParams]);
+
+  useEffect(() => {
+    const current = searchParams.get('search') || '';
+    if (current === query) return;
+
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (query) {
+        next.set('search', query);
+      } else {
+        next.delete('search');
+      }
+      return next;
+    }, { replace: true });
+  }, [query, searchParams, setSearchParams]);
 
   const suppliers = useMemo(() => {
     const grouped = new Map<string, Quote[]>();
@@ -59,7 +84,14 @@ export function SuppliersPage({ quotes }: SuppliersPageProps) {
               {suppliers.map((supplier) => (
                 <button
                   key={supplier.name}
-                  onClick={() => setSelectedSupplier(supplier.name)}
+                  onClick={() => {
+                    setSelectedSupplier(supplier.name);
+                    setSearchParams((prev) => {
+                      const next = new URLSearchParams(prev);
+                      next.set('supplier', supplier.name);
+                      return next;
+                    }, { replace: true });
+                  }}
                   className="rounded-2xl border border-slatePremium-200 bg-white p-5 text-left transition hover:-translate-y-0.5 hover:border-gold-500"
                 >
                   <div className="mb-4 flex items-center justify-between">
@@ -77,7 +109,17 @@ export function SuppliersPage({ quotes }: SuppliersPageProps) {
         </CardBody>
       </Card>
 
-      <Modal open={!!active} onClose={() => setSelectedSupplier(null)}>
+      <Modal
+        open={!!active}
+        onClose={() => {
+          setSelectedSupplier(null);
+          setSearchParams((prev) => {
+            const next = new URLSearchParams(prev);
+            next.delete('supplier');
+            return next;
+          }, { replace: true });
+        }}
+      >
         <div className="p-6">
           <h3 className="text-xl font-semibold text-navy-950">{active?.name}</h3>
           <div className="mt-4 space-y-2 text-sm text-slatePremium-700">
@@ -94,7 +136,17 @@ export function SuppliersPage({ quotes }: SuppliersPageProps) {
             ))}
           </div>
           <div className="mt-5 text-right">
-            <Button variant="outline" onClick={() => setSelectedSupplier(null)}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setSelectedSupplier(null);
+                setSearchParams((prev) => {
+                  const next = new URLSearchParams(prev);
+                  next.delete('supplier');
+                  return next;
+                }, { replace: true });
+              }}
+            >
               Close
             </Button>
           </div>

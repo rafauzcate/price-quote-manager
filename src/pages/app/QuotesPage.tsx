@@ -1,5 +1,6 @@
-import { Fragment, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
+import { useSearchParams } from 'react-router-dom';
 import { Download, Eye, FileText, Filter, Loader2, Pencil, Plus, Trash2, UploadCloud } from 'lucide-react';
 
 import { formatCurrency, formatDate, quoteStatus } from '../../lib/format';
@@ -41,6 +42,7 @@ export function QuotesPage({
   const [referenceNumber, setReferenceNumber] = useState('');
   const [fileContent, setFileContent] = useState('');
   const [fileObj, setFileObj] = useState<File | undefined>();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const filtered = useMemo(() => {
     const lower = search.toLowerCase();
@@ -113,6 +115,35 @@ export function QuotesPage({
   };
 
   const allVisibleSelected = paginated.length > 0 && paginated.every((quote) => selected.includes(quote.id));
+
+  useEffect(() => {
+    const quoteId = searchParams.get('quoteId');
+    if (!quoteId) return;
+
+    const targetQuote = quotes.find((quote) => quote.id === quoteId);
+    if (!targetQuote) return;
+
+    setSelected((prev) => (prev.includes(quoteId) ? prev : [quoteId]));
+
+    if (search) {
+      setSearch('');
+    }
+
+    const shouldFocus = searchParams.get('focus') === '1';
+    if (shouldFocus) {
+      window.setTimeout(() => {
+        const row = document.getElementById(`quote-row-${quoteId}`);
+        row?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 50);
+    }
+
+    setSearchParams((previous) => {
+      const next = new URLSearchParams(previous);
+      next.delete('quoteId');
+      next.delete('focus');
+      return next;
+    }, { replace: true });
+  }, [quotes, search, searchParams, setSearchParams]);
 
   return (
     <div className="space-y-6">
@@ -201,7 +232,7 @@ export function QuotesPage({
 
                     return (
                       <Fragment key={quote.id}>
-                        <tr className="border-t border-slatePremium-100 hover:bg-slatePremium-50" title={quote.part_description || 'Quote preview'}>
+                        <tr id={`quote-row-${quote.id}`} className="border-t border-slatePremium-100 hover:bg-slatePremium-50" title={quote.part_description || 'Quote preview'}>
                           <td className="px-3 py-2 align-top">
                             <input type="checkbox" checked={isSelected} onChange={(e) => toggleSelected(quote.id, e.target.checked)} />
                           </td>
