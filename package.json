@@ -5,9 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:app": "vite --open /app.html",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
+    "preview:app": "vite preview --open /app.html",
     "typecheck": "tsc --noEmit -p tsconfig.app.json"
   },
   "dependencies": {

@@ -5,8 +5,14 @@
 [build.environment]
   NODE_VERSION = "18"
 
-# SPA fallback so deep links like /app/quotes resolve correctly
+# React app shell route
 [[redirects]]
-  from = "/*"
-  to = "/index.html"
+  from = "/app"
+  to = "/app.html"
+  status = 200
+
+# React deep-link fallback only under /app/*
+[[redirects]]
+  from = "/app/*"
+  to = "/app.html"
   status = 200

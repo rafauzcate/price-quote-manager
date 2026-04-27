@@ -35,6 +35,11 @@ export default defineConfig({
   optimizeDeps: {
     exclude: ['lucide-react'],
   },
+  build: {
+    rollupOptions: {
+      input: path.resolve(__dirname, 'app.html'),
+    },
+  },
   worker: {
     format: 'es',
   },
