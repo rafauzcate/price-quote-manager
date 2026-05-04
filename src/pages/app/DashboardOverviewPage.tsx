@@ -1,5 +1,5 @@
-import { Activity, FileText, PoundSterling, Timer } from 'lucide-react';
-import { Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Activity, FileText, PoundSterling } from 'lucide-react';
+import { Bar, BarChart, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { Card, CardBody, CardHeader } from '../../components/ui/Card';
 import { formatCurrency } from '../../lib/format';
 import type { Quote } from '../../types/app';
@@ -9,21 +9,44 @@ interface DashboardOverviewPageProps {
   loading?: boolean;
 }
 
-const disciplineColors = ['#D4AF37', '#E0BE57', '#C89D2A', '#B98A1F', '#F0D98A', '#2D3E50'];
+const DISCIPLINE_NEON_COLORS: Record<string, string> = {
+  Electrical: '#00FF00',
+  Mechanical: '#FF1493',
+  Structural: '#00FFFF',
+  Civil: '#FF6600',
+  ICA: '#FFFF00',
+  Unassigned: '#CCCCCC',
+};
+
+const FALLBACK_NEON_COLORS = ['#39FF14', '#FF10F0', '#00E5FF', '#FF5F1F', '#F5FF00'];
+const DISCIPLINE_ORDER = ['Electrical', 'Mechanical', 'Structural', 'Civil', 'ICA', 'Unassigned'];
+
+const getDisciplineColor = (discipline: string, index: number) =>
+  DISCIPLINE_NEON_COLORS[discipline] || FALLBACK_NEON_COLORS[index % FALLBACK_NEON_COLORS.length];
 
 export function DashboardOverviewPage({ quotes, loading }: DashboardOverviewPageProps) {
   const totalValue = quotes.reduce((sum, quote) => sum + (quote.order_total || quote.price || 0), 0);
-  const pendingQuotes = quotes.filter((q) => !q.quote_date).length;
   const expired = quotes.filter((q) => q.expires_at && new Date(q.expires_at).getTime() < Date.now()).length;
 
-  const quoteTrend = [...quotes]
-    .sort((a, b) => new Date(b.quote_date || b.created_at).getTime() - new Date(a.quote_date || a.created_at).getTime())
-    .slice(0, 12)
-    .reverse()
-    .map((quote) => ({
-      reference: quote.reference_number || quote.generated_part_number || quote.reference_name,
-      value: Number(quote.order_total || quote.price || 0),
-    }));
+  const consolidatedByReference = quotes.reduce<Record<string, number>>((acc, quote) => {
+    const reference =
+      quote.reference_number?.trim() ||
+      quote.generated_part_number?.trim() ||
+      quote.reference_name?.trim() ||
+      'Unknown';
+
+    acc[reference] = (acc[reference] || 0) + Number(quote.order_total || quote.price || 0);
+    return acc;
+  }, {});
+
+  const quoteTrend = Object.entries(consolidatedByReference)
+    .map(([reference, value]) => ({ reference, value }))
+    .sort((a, b) =>
+      a.reference.localeCompare(b.reference, 'en-GB', {
+        numeric: true,
+        sensitivity: 'base',
+      }),
+    );
 
   const disciplineMap = quotes.reduce<Record<string, number>>((acc, quote) => {
     const key = quote.discipline || 'Unassigned';
@@ -32,22 +55,31 @@ export function DashboardOverviewPage({ quotes, loading }: DashboardOverviewPage
   }, {});
 
   const disciplineTotal = Object.values(disciplineMap).reduce((sum, count) => sum + count, 0);
-  const byDiscipline = Object.entries(disciplineMap).map(([name, value]) => ({
-    name,
-    value,
-    percentage: disciplineTotal > 0 ? Math.round((value / disciplineTotal) * 100) : 0,
-  }));
+  const byDiscipline = Object.entries(disciplineMap)
+    .map(([name, value]) => ({
+      name,
+      value,
+      percentage: disciplineTotal > 0 ? Math.round((value / disciplineTotal) * 100) : 0,
+    }))
+    .sort((a, b) => {
+      const aIndex = DISCIPLINE_ORDER.indexOf(a.name);
+      const bIndex = DISCIPLINE_ORDER.indexOf(b.name);
+      const normalizedA = aIndex === -1 ? Number.MAX_SAFE_INTEGER : aIndex;
+      const normalizedB = bIndex === -1 ? Number.MAX_SAFE_INTEGER : bIndex;
+      return normalizedA - normalizedB;
+    });
+
+  const disciplinePercentages = new Map(byDiscipline.map((item) => [item.name, item.percentage]));
 
   const kpis = [
     { label: 'Total Quotes', value: quotes.length, icon: FileText },
-    { label: 'Pending Quotes', value: pendingQuotes, icon: Timer },
+    { label: 'Portfolio Total Value', value: formatCurrency(totalValue), icon: PoundSterling },
     { label: 'Expired Quotes', value: expired, icon: Activity },
-    { label: 'Quote Value', value: formatCurrency(totalValue), icon: PoundSterling },
   ];
 
   return (
     <div className="space-y-6">
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-3">
         {kpis.map((kpi) => (
           <Card key={kpi.label}>
             <CardBody className="flex items-center justify-between">
@@ -84,14 +116,26 @@ export function DashboardOverviewPage({ quotes, loading }: DashboardOverviewPage
           <CardHeader>
             <h3 className="font-semibold text-navy-950">Disciplines distribution</h3>
           </CardHeader>
-          <CardBody className="h-[320px]">
+          <CardBody className="h-[320px] px-3 pb-3 pt-1">
             <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie data={byDiscipline} dataKey="value" nameKey="name" innerRadius={55} outerRadius={90}>
-                  {byDiscipline.map((_, index) => (
-                    <Cell key={index} fill={disciplineColors[index % disciplineColors.length]} />
+              <PieChart margin={{ top: 8, right: 92, bottom: 8, left: 8 }}>
+                <Pie data={byDiscipline} dataKey="value" nameKey="name" innerRadius={52} outerRadius={85}>
+                  {byDiscipline.map((item, index) => (
+                    <Cell key={item.name} fill={getDisciplineColor(item.name, index)} />
                   ))}
                 </Pie>
+                <Legend
+                  layout="vertical"
+                  align="right"
+                  verticalAlign="middle"
+                  iconType="circle"
+                  wrapperStyle={{ fontSize: '12px', lineHeight: '18px', paddingLeft: '8px' }}
+                  formatter={(value) => {
+                    const label = String(value);
+                    const percent = disciplinePercentages.get(label) ?? 0;
+                    return `${label} ${percent}%`;
+                  }}
+                />
                 <Tooltip
                   formatter={(value: number, name: string, payload: unknown) => {
                     const percent =
@@ -103,17 +147,6 @@ export function DashboardOverviewPage({ quotes, loading }: DashboardOverviewPage
                 />
               </PieChart>
             </ResponsiveContainer>
-            <div className="mt-2 space-y-1 text-xs text-slatePremium-600">
-              {byDiscipline.map((item, index) => (
-                <div key={item.name} className="flex items-center justify-between">
-                  <span className="inline-flex items-center gap-2">
-                    <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: disciplineColors[index % disciplineColors.length] }} />
-                    {item.name}
-                  </span>
-                  <span>{item.percentage}%</span>
-                </div>
-              ))}
-            </div>
           </CardBody>
         </Card>
       </div>

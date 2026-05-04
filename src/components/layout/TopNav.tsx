@@ -1,4 +1,4 @@
-import { Bell, CheckCheck, LogOut, Search, Trash2, X } from 'lucide-react';
+import { Bell, CheckCheck, LogOut, Trash2, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { Avatar } from '../ui/Avatar';
@@ -16,7 +16,6 @@ interface TopNavProps {
 export function TopNav({ userProfile, userEmail, onSignOut }: TopNavProps) {
   const {
     notifications,
-    setCommandOpen,
     markNotificationRead,
     dismissNotification,
     clearNotifications,
@@ -32,18 +31,8 @@ export function TopNav({ userProfile, userEmail, onSignOut }: TopNavProps) {
 
   return (
     <header className="sticky top-0 z-30 border-b border-slatePremium-200 bg-white/90 backdrop-blur-xl">
-      <div className="flex items-center justify-between gap-3 px-4 py-3 md:px-6">
-        <button
-          onClick={() => setCommandOpen(true)}
-          className="hidden items-center gap-2 rounded-xl border border-slatePremium-300 px-3 py-2 text-sm text-slatePremium-600 hover:bg-slatePremium-100 md:inline-flex"
-          title="Open command palette (Cmd/Ctrl + K)"
-          aria-label="Open command palette"
-        >
-          <Search size={15} />
-          <kbd className="rounded bg-slatePremium-100 px-1.5 py-0.5 text-xs">⌘K</kbd>
-        </button>
-
-        <div className="relative ml-auto">
+      <div className="flex items-center justify-end gap-3 px-4 py-3 md:px-6">
+        <div className="relative">
           <button
             onClick={() => setShowNotifications((prev) => !prev)}
             className="relative rounded-xl border border-slatePremium-300 p-2.5 hover:bg-slatePremium-100"
