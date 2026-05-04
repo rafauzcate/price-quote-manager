@@ -39,7 +39,8 @@ function PublicApp() {
       <Route path="/reset-password" element={<AuthPage mode="reset" />} />
       <Route path="/auth/login" element={<Navigate to="/login" replace />} />
       <Route path="/auth/signup" element={<Navigate to="/signup" replace />} />
-      <Route path="/auth/reset" element={<Navigate to="/reset-password" replace />} />
+      <Route path="/auth/reset" element={<AuthPage mode="reset" />} />
+      <Route path="/auth/reset-password" element={<AuthPage mode="reset" />} />
       <Route
         path="/app/*"
         element={
