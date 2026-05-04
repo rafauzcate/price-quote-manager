@@ -37,6 +37,7 @@ interface Quote {
   online_price_found?: number;
   online_price_source?: string;
   online_price_checked_at?: string;
+  notes?: string | null;
 }
 
 interface SearchAreaProps {
@@ -124,7 +125,13 @@ export function SearchArea({ quotes, onSearch, onDeleteQuote, onQuoteUpdated, us
   };
 
   const handleExport = () => {
-    const quotesToPrint = quotes.filter((q) => selectedQuotes.has(q.id));
+    const quotesToPrint = quotes
+      .filter((q) => selectedQuotes.has(q.id))
+      .map((quote) => ({
+        ...quote,
+        notes: quote.notes ?? undefined,
+      }));
+
     printQuotes({
       quotes: quotesToPrint,
       userName: userName || '',

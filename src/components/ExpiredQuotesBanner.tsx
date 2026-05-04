@@ -26,9 +26,7 @@ export function ExpiredQuotesBanner({ userId, onRefresh }: ExpiredQuotesBannerPr
 
   const loadExpiredQuotes = async () => {
     try {
-      const { data, error } = await supabase.rpc('get_expired_quotes', {
-        p_user_id: userId
-      });
+      const { data, error } = await supabase.rpc('get_expired_quotes');
 
       if (error) throw error;
 
@@ -68,7 +66,6 @@ export function ExpiredQuotesBanner({ userId, onRefresh }: ExpiredQuotesBannerPr
 
       if (!quote) return;
 
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
       const { data: { session } } = await supabase.auth.getSession();
 
       if (!session) return;

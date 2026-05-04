@@ -1,5 +1,5 @@
 import { FileText, FileSpreadsheet, X } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 
 interface FilePreviewProps {
   file: File | null;
@@ -8,18 +8,12 @@ interface FilePreviewProps {
 }
 
 export function FilePreview({ file, fileContent, onRemove }: FilePreviewProps) {
-  const [pdfPreview, setPdfPreview] = useState<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
     if (file?.type === 'application/pdf') {
-      renderPdfPreview();
+      void renderPdfPreview();
     }
-    return () => {
-      if (pdfPreview) {
-        URL.revokeObjectURL(pdfPreview);
-      }
-    };
   }, [file]);
 
   const renderPdfPreview = async () => {
@@ -42,10 +36,13 @@ export function FilePreview({ file, fileContent, onRemove }: FilePreviewProps) {
       canvas.height = viewport.height;
       canvas.width = viewport.width;
 
-      await page.render({
-        canvasContext: context,
-        viewport: viewport,
-      }).promise;
+      await page
+        .render({
+          canvas,
+          canvasContext: context,
+          viewport,
+        })
+        .promise;
     } catch (error) {
       console.error('Error rendering PDF preview:', error);
     }
@@ -58,16 +55,24 @@ export function FilePreview({ file, fileContent, onRemove }: FilePreviewProps) {
 
     if (file.type === 'application/pdf') {
       return <FileText className="w-8 h-8 text-red-500" />;
-    } else if (file.type.includes('spreadsheet') || file.name.endsWith('.xlsx') || file.name.endsWith('.xls') || file.name.endsWith('.csv')) {
+    }
+
+    if (
+      file.type.includes('spreadsheet') ||
+      file.name.endsWith('.xlsx') ||
+      file.name.endsWith('.xls') ||
+      file.name.endsWith('.csv')
+    ) {
       return <FileSpreadsheet className="w-8 h-8 text-green-500" />;
     }
+
     return <FileText className="w-8 h-8 text-blue-500" />;
   };
 
   const formatFileSize = (bytes: number) => {
-    if (bytes < 1024) return bytes + ' B';
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
   return (
@@ -76,20 +81,15 @@ export function FilePreview({ file, fileContent, onRemove }: FilePreviewProps) {
         <div className="flex items-center gap-3">
           {getFileIcon()}
           <div>
-            <p className="font-medium text-gray-800">
-              {file ? file.name : 'Pasted Content'}
-            </p>
-            {file && (
-              <p className="text-sm text-gray-500">
-                {formatFileSize(file.size)}
-              </p>
-            )}
+            <p className="font-medium text-gray-800">{file ? file.name : 'Pasted Content'}</p>
+            {file && <p className="text-sm text-gray-500">{formatFileSize(file.size)}</p>}
           </div>
         </div>
         <button
           onClick={onRemove}
           className="p-2 hover:bg-white rounded-lg transition-colors"
           title="Remove file"
+          type="button"
         >
           <X className="w-5 h-5 text-gray-500" />
         </button>

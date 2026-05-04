@@ -11,6 +11,7 @@ const corsHeaders = {
 const MAX_TEXT_LENGTH = 100000; // 100KB text limit
 const HOURLY_RATE_LIMIT = 50;
 const DAILY_RATE_LIMIT = 200;
+const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
 
 interface LineItem {
   product_code: string;
@@ -34,7 +35,7 @@ interface ParsedQuote {
   line_items: LineItem[];
 }
 
-async function parseQuoteWithAI(text: string, apiKey: string): Promise<ParsedQuote> {
+async function parseQuoteWithAI(text: string): Promise<ParsedQuote> {
   const prompt = `You are a quote parsing assistant. Extract ALL information from the provided supplier quotation/proposal document. Return a JSON object with exactly these fields:
 
 - supplier: name of the company providing the quote — this is the VENDOR/SUPPLIER, not the customer. Look for company names in headers, footers, letterheads, or "From" fields (string)
@@ -114,7 +115,7 @@ Return only valid JSON, no other text.`;
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Authorization": `Bearer ${apiKey}`,
+      "Authorization": `Bearer ${OPENAI_API_KEY}`, 
     },
     body: JSON.stringify({
       model: "gpt-4o-mini",
@@ -244,6 +245,13 @@ Deno.serve(async (req: Request) => {
 
     userId = user.id;
 
+    if (!OPENAI_API_KEY) {
+      return new Response(JSON.stringify({ error: "AI parsing service not configured" }), {
+        status: 503,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // Create a service role client for database operations to bypass RLS
     const supabaseAdmin = createClient(
       Deno.env.get("SUPABASE_URL") ?? "",
@@ -304,45 +312,7 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Get user's API key from database using admin client to bypass RLS
-    console.log('Attempting to fetch API key for user:', userId);
-    const { data: apiKeyData, error: apiKeyError } = await supabaseAdmin
-      .from("encrypted_api_keys")
-      .select("encrypted_value")
-      .eq("user_id", userId)
-      .eq("key_name", "openai")
-      .maybeSingle();
-
-    console.log('API key fetch result:', {
-      hasData: !!apiKeyData,
-      error: apiKeyError?.message,
-      keyLength: apiKeyData?.encrypted_value?.length
-    });
-
-    if (apiKeyError || !apiKeyData) {
-      const errorMsg = apiKeyError
-        ? `Database error: ${apiKeyError.message}`
-        : "OpenAI API key not configured. Please add your API key in settings.";
-
-      console.error('API key retrieval failed:', errorMsg);
-      await logApiUsage(supabaseAdmin, userId, "parse_quote", "error", errorMsg, req, startTime);
-      return new Response(
-        JSON.stringify({ error: errorMsg }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
-    }
-
-    // Update last_used_at
-    await supabaseAdmin
-      .from("encrypted_api_keys")
-      .update({ updated_at: new Date().toISOString() })
-      .eq("user_id", userId)
-      .eq("key_name", "openai");
-
-    const parsed = await parseQuoteWithAI(text, apiKeyData.encrypted_value);
+    const parsed = await parseQuoteWithAI(text);
 
     await logApiUsage(supabaseAdmin, userId, "parse_quote", "success", null, req, startTime);
 

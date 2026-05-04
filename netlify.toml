@@ -1,0 +1,18 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "18"
+
+# React app shell route
+[[redirects]]
+  from = "/app"
+  to = "/app.html"
+  status = 200
+
+# React deep-link fallback only under /app/*
+[[redirects]]
+  from = "/app/*"
+  to = "/app.html"
+  status = 200

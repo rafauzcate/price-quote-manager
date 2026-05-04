@@ -1,3 +1,41 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Manrope:wght@600;700;800&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  body {
+    @apply bg-slatePremium-50 text-slatePremium-900 font-sans antialiased;
+    margin: 0;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    @apply font-heading;
+  }
+}
+
+@layer components {
+  .glass-card {
+    @apply bg-white/80 backdrop-blur-xl border border-white/40 shadow-glass;
+  }
+
+  .premium-border {
+    background: linear-gradient(120deg, rgba(212, 175, 55, 0.5), rgba(10, 22, 40, 0.35));
+    padding: 1px;
+    border-radius: 1rem;
+  }
+
+  .premium-border > div {
+    @apply rounded-2xl bg-white;
+  }
+}

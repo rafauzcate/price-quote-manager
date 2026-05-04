@@ -22,3 +22,10 @@ dist-ssr
 *.sw?
 .env
 .abacus.donotdelete
+
+# Local Netlify folder
+.netlify
+
+
+# Supabase local metadata
+supabase/.temp/

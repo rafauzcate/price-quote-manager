@@ -1,3 +1,5 @@
+import DOMPurify from 'dompurify';
+
 interface LineItem {
   id: string;
   product_code: string;
@@ -20,7 +22,7 @@ interface Quote {
   lead_time: string;
   contact_person: string;
   quote_reference?: string;
-  quote_date?: string;
+  quote_date?: string | null;
   total_net_amount?: number;
   total_vat_amount?: number;
   order_total?: number;
@@ -58,6 +60,22 @@ const formatDateTime = (date: Date) =>
     second: '2-digit',
   });
 
+const escapeHtml = (value: string) =>
+  value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+const sanitizeText = (value: unknown) => {
+  const sanitized = DOMPurify.sanitize(String(value ?? ''), {
+    ALLOWED_TAGS: [],
+    ALLOWED_ATTR: [],
+  });
+  return escapeHtml(sanitized);
+};
+
 export function printQuotes({ quotes, userName, userEmail, userCompany }: PrintOptions) {
   const now = new Date();
   const timestamp = formatDateTime(now);
@@ -86,8 +104,8 @@ export function printQuotes({ quotes, userName, userEmail, userCompany }: PrintO
                 .map(
                   (item) => `
                 <tr>
-                  <td>${item.product_code || '—'}</td>
-                  <td>${item.description}</td>
+                  <td>${sanitizeText(item.product_code || '—')}</td>
+                  <td>${sanitizeText(item.description)}</td>
                   <td class="text-right">${item.quantity}</td>
                   <td class="text-right">${formatPrice(item.unit_price)}</td>
                   <td class="text-right">${item.discount_percent}%</td>
@@ -119,31 +137,31 @@ export function printQuotes({ quotes, userName, userEmail, userCompany }: PrintO
           <div class="quote-header-grid">
             <div class="field">
               <span class="label">Reference Name</span>
-              <span class="value">${quote.reference_name}</span>
+              <span class="value">${sanitizeText(quote.reference_name)}</span>
             </div>
             <div class="field">
               <span class="label">Part Number</span>
-              <span class="value blue">${quote.generated_part_number}</span>
+              <span class="value blue">${sanitizeText(quote.generated_part_number)}</span>
             </div>
             <div class="field">
               <span class="label">Supplier</span>
-              <span class="value">${quote.supplier}</span>
+              <span class="value">${sanitizeText(quote.supplier)}</span>
             </div>
             <div class="field">
               <span class="label">Quote Ref</span>
-              <span class="value">${quote.quote_reference || '—'}</span>
+              <span class="value">${sanitizeText(quote.quote_reference || '—')}</span>
             </div>
             <div class="field">
               <span class="label">Contact</span>
-              <span class="value">${quote.supplier_contact_name || quote.contact_person || '—'}</span>
+              <span class="value">${sanitizeText(quote.supplier_contact_name || quote.contact_person || '—')}</span>
             </div>
             <div class="field">
               <span class="label">Email</span>
-              <span class="value">${quote.supplier_email || '—'}</span>
+              <span class="value">${sanitizeText(quote.supplier_email || '—')}</span>
             </div>
             <div class="field">
               <span class="label">Phone</span>
-              <span class="value">${quote.supplier_phone || '—'}</span>
+              <span class="value">${sanitizeText(quote.supplier_phone || '—')}</span>
             </div>
             <div class="field">
               <span class="label">Quote Date</span>
@@ -154,7 +172,7 @@ export function printQuotes({ quotes, userName, userEmail, userCompany }: PrintO
               <span class="value bold">${formatPrice(quote.order_total || quote.price)}</span>
             </div>
           </div>
-          ${quote.notes ? `<div class="notes"><span class="label">Notes:</span> ${quote.notes}</div>` : ''}
+          ${quote.notes ? `<div class="notes"><span class="label">Notes:</span> ${sanitizeText(quote.notes)}</div>` : ''}
         </div>
         ${lineItemsHtml}
       </div>
@@ -384,21 +402,15 @@ export function printQuotes({ quotes, userName, userEmail, userCompany }: PrintO
     <body>
       <div class="print-header">
         <div class="logo-area">
-          <svg width="36" height="36" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M20 4 L17 18 L20 16 L23 18 Z" fill="#FF8C00" stroke="#FF8C00" stroke-width="0.5" stroke-linejoin="miter"/>
-            <path d="M36 20 L22 17 L24 20 L22 23 Z" fill="#333333"/>
-            <path d="M20 36 L17 22 L20 24 L23 22 Z" fill="#333333"/>
-            <path d="M4 20 L18 17 L16 20 L18 23 Z" fill="#333333"/>
-            <circle cx="20" cy="20" r="3" fill="white" stroke="#333333" stroke-width="1"/>
-          </svg>
+          <img src="${window.location.origin}/logo.png" alt="VantagePM logo" style="width:36px;height:36px;object-fit:cover;border-radius:8px;" />
           <div class="logo-text">
             <span class="logo-vantage">Vantage</span><span class="logo-pm">PM</span>
           </div>
         </div>
         <div class="header-meta">
           <div class="report-title">Quote Export Report</div>
-          <div class="meta-line"><span class="meta-label">Exported by:</span> ${userName || userEmail}${userCompany ? ` &bull; ${userCompany}` : ''}</div>
-          <div class="meta-line"><span class="meta-label">Email:</span> ${userEmail}</div>
+          <div class="meta-line"><span class="meta-label">Exported by:</span> ${sanitizeText(userName || userEmail)}${userCompany ? ` &bull; ${sanitizeText(userCompany)}` : ''}</div>
+          <div class="meta-line"><span class="meta-label">Email:</span> ${sanitizeText(userEmail)}</div>
           <div class="meta-line"><span class="meta-label">Date &amp; Time:</span> ${timestamp}</div>
         </div>
       </div>
