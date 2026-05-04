@@ -4,7 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 import { Download, Eye, FileText, Filter, Loader2, Pencil, Plus, Trash2, UploadCloud } from 'lucide-react';
 
 import { formatCurrency, formatDate, quoteStatus } from '../../lib/format';
-import type { Quote } from '../../types/app';
+import type { Quote, QuoteDiscipline } from '../../types/app';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Card, CardBody, CardHeader } from '../../components/ui/Card';
@@ -12,11 +12,20 @@ import { Input } from '../../components/ui/Input';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { QuoteEditModal } from '../../components/QuoteEditModal';
 
+const disciplineOptions: QuoteDiscipline[] = ['Electrical', 'Mechanical', 'Structural', 'Civil', 'ICA'];
+
 interface QuotesPageProps {
   quotes: Quote[];
   loading?: boolean;
   onDeleteQuote: (quoteId: string) => Promise<void>;
-  onCreateQuote: (data: { fileContent: string; referenceName: string; referenceNumber: string; file?: File; fileName?: string }) => Promise<void>;
+  onCreateQuote: (data: {
+    fileContent: string;
+    referenceName: string;
+    referenceNumber: string;
+    discipline?: QuoteDiscipline;
+    file?: File;
+    fileName?: string;
+  }) => Promise<void>;
   onQuoteUpdated?: () => Promise<void> | void;
   userName?: string;
   userEmail?: string;
@@ -40,6 +49,7 @@ export function QuotesPage({
   const [creating, setCreating] = useState(false);
   const [referenceName, setReferenceName] = useState('');
   const [referenceNumber, setReferenceNumber] = useState('');
+  const [discipline, setDiscipline] = useState<QuoteDiscipline | ''>('');
   const [fileContent, setFileContent] = useState('');
   const [fileObj, setFileObj] = useState<File | undefined>();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -47,14 +57,16 @@ export function QuotesPage({
   const filtered = useMemo(() => {
     const lower = search.toLowerCase();
     const rows = quotes.filter((q) => {
-      const text = `${q.reference_name} ${q.reference_number} ${q.supplier} ${q.part_description} ${q.notes || ''}`.toLowerCase();
+      const text = `${q.reference_name} ${q.reference_number} ${q.supplier} ${q.discipline || ''} ${q.part_description} ${q.notes || ''}`.toLowerCase();
       return text.includes(lower);
     });
 
     return rows.sort((a, b) => {
       if (sortBy === 'supplier') return a.supplier.localeCompare(b.supplier);
       if (sortBy === 'value') return (b.order_total || b.price || 0) - (a.order_total || a.price || 0);
-      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      const aDate = a.quote_date || a.created_at;
+      const bDate = b.quote_date || b.created_at;
+      return new Date(bDate || 0).getTime() - new Date(aDate || 0).getTime();
     });
   }, [quotes, search, sortBy]);
 
@@ -79,12 +91,14 @@ export function QuotesPage({
       await onCreateQuote({
         referenceName,
         referenceNumber,
+        discipline: discipline || undefined,
         fileContent,
         file: fileObj,
         fileName: fileObj?.name,
       });
       setReferenceName('');
       setReferenceNumber('');
+      setDiscipline('');
       setFileContent('');
       setFileObj(undefined);
     } finally {
@@ -137,12 +151,15 @@ export function QuotesPage({
       }, 50);
     }
 
-    setSearchParams((previous) => {
-      const next = new URLSearchParams(previous);
-      next.delete('quoteId');
-      next.delete('focus');
-      return next;
-    }, { replace: true });
+    setSearchParams(
+      (previous) => {
+        const next = new URLSearchParams(previous);
+        next.delete('quoteId');
+        next.delete('focus');
+        return next;
+      },
+      { replace: true },
+    );
   }, [quotes, search, searchParams, setSearchParams]);
 
   return (
@@ -154,7 +171,12 @@ export function QuotesPage({
         <CardBody>
           <div className="grid gap-4 lg:grid-cols-2">
             <div className="space-y-4">
-              <div {...getRootProps()} className={`rounded-2xl border-2 border-dashed p-6 text-center transition ${isDragActive ? 'border-gold-500 bg-gold-500/5' : 'border-slatePremium-300 bg-slatePremium-50'}`}>
+              <div
+                {...getRootProps()}
+                className={`rounded-2xl border-2 border-dashed p-6 text-center transition ${
+                  isDragActive ? 'border-gold-500 bg-gold-500/5' : 'border-slatePremium-300 bg-slatePremium-50'
+                }`}
+              >
                 <input {...getInputProps()} />
                 <UploadCloud className="mx-auto mb-3 text-navy-700" />
                 <p className="text-sm font-medium">Drag and drop quote files</p>
@@ -171,8 +193,31 @@ export function QuotesPage({
             <div className="space-y-3">
               <Input label="Reference Name" value={referenceName} onChange={(e) => setReferenceName(e.target.value)} />
               <Input label="Reference Number" value={referenceNumber} onChange={(e) => setReferenceNumber(e.target.value)} />
-              <div className="rounded-xl border border-slatePremium-200 bg-slatePremium-50 p-3 text-xs text-slatePremium-600">AI parsing status: {fileContent ? 'Ready to parse' : 'Awaiting file input'}</div>
-              <Button onClick={handleCreate} disabled={creating || !referenceName || !referenceNumber || !fileContent} leftIcon={creating ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slatePremium-600">Discipline</label>
+                <select
+                  value={discipline}
+                  onChange={(e) => setDiscipline(e.target.value as QuoteDiscipline | '')}
+                  className="w-full rounded-xl border border-slatePremium-300 bg-white px-3 py-2.5 text-sm"
+                >
+                  <option value="">Select discipline</option>
+                  {disciplineOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="rounded-xl border border-slatePremium-200 bg-slatePremium-50 p-3 text-xs text-slatePremium-600">
+                AI parsing status: {fileContent ? 'Ready to parse' : 'Awaiting file input'}
+              </div>
+              <Button
+                onClick={handleCreate}
+                disabled={creating || !referenceName || !referenceNumber || !fileContent}
+                leftIcon={creating ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
+              >
                 {creating ? 'Processing...' : 'Create Quote'}
               </Button>
             </div>
@@ -220,6 +265,7 @@ export function QuotesPage({
                     </th>
                     <th className="px-3 py-2">Reference</th>
                     <th className="px-3 py-2">Supplier</th>
+                    <th className="px-3 py-2">Discipline</th>
                     <th className="px-3 py-2">Status</th>
                     <th className="px-3 py-2">Value</th>
                     <th className="px-3 py-2">Date</th>
@@ -244,11 +290,12 @@ export function QuotesPage({
                             </p>
                           </td>
                           <td className="px-3 py-2 align-top">{quote.supplier}</td>
+                          <td className="px-3 py-2 align-top">{quote.discipline || '—'}</td>
                           <td className="px-3 py-2 align-top">
                             <Badge variant={quoteStatus(quote.expires_at) === 'Expired' ? 'danger' : 'success'}>{quoteStatus(quote.expires_at)}</Badge>
                           </td>
                           <td className="px-3 py-2 align-top font-semibold">{formatCurrency(quote.order_total || quote.price || 0)}</td>
-                          <td className="px-3 py-2 align-top">{formatDate(quote.created_at)}</td>
+                          <td className="px-3 py-2 align-top">{formatDate(quote.quote_date || quote.created_at)}</td>
                           <td className="px-3 py-2 align-top">
                             <div className="flex justify-end gap-1">
                               <button
@@ -282,11 +329,12 @@ export function QuotesPage({
                         {isSelected ? (
                           <tr className="border-t border-slatePremium-100 bg-slatePremium-50/60">
                             <td />
-                            <td colSpan={6} className="px-3 py-3">
+                            <td colSpan={7} className="px-3 py-3">
                               <div className="grid gap-4 lg:grid-cols-2">
                                 <div className="space-y-2 text-sm text-slatePremium-700">
                                   <p><span className="font-semibold">Reference:</span> {quote.reference_name}</p>
                                   <p><span className="font-semibold">Supplier:</span> {quote.supplier}</p>
+                                  <p><span className="font-semibold">Discipline:</span> {quote.discipline || '—'}</p>
                                   <p><span className="font-semibold">Contact:</span> {quote.supplier_contact_name || quote.contact_person || 'N/A'}</p>
                                   <p><span className="font-semibold">Email:</span> {quote.supplier_email || 'N/A'}</p>
                                   <p><span className="font-semibold">Phone:</span> {quote.supplier_phone || 'N/A'}</p>

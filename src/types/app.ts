@@ -1,3 +1,5 @@
+export type QuoteDiscipline = 'Electrical' | 'Mechanical' | 'Structural' | 'Civil' | 'ICA';
+
 export interface LineItem {
   id: string;
   product_code: string;
@@ -19,8 +21,9 @@ export interface Quote {
   created_at: string;
   lead_time: string;
   contact_person: string;
+  discipline?: QuoteDiscipline | null;
   quote_reference?: string;
-  quote_date?: string;
+  quote_date?: string | null;
   total_net_amount?: number;
   total_vat_amount?: number;
   order_total?: number;

@@ -21,7 +21,7 @@ import { NotesModal } from '../components/NotesModal';
 import { ExpiredQuotesBanner } from '../components/ExpiredQuotesBanner';
 import { ProtectedRoute } from '../components/ProtectedRoute';
 import { canCallDataApiOnCurrentRoute } from '../lib/routeGuards';
-import type { Quote, UserProfile } from '../types/app';
+import type { Quote, QuoteDiscipline, UserProfile } from '../types/app';
 
 const DashboardOverviewPage = lazy(() => import('../pages/app/DashboardOverviewPage').then((m) => ({ default: m.DashboardOverviewPage })));
 const QuotesPage = lazy(() => import('../pages/app/QuotesPage').then((m) => ({ default: m.QuotesPage })));
@@ -481,6 +481,7 @@ export function ProtectedApp() {
     fileContent: string;
     referenceName: string;
     referenceNumber: string;
+    discipline?: QuoteDiscipline;
     file?: File;
     fileName?: string;
   }) => {
@@ -525,18 +526,22 @@ export function ProtectedApp() {
       }
     }
 
+    const parsedQuoteDate = typeof parsedData?.quote_date === 'string' ? parsedData.quote_date : null;
+    const fallbackQuoteDate = new Date().toISOString().slice(0, 10);
+
     const newQuote = {
       user_id: currentUser.id,
       reference_name: data.referenceName,
       reference_number: data.referenceNumber,
       generated_part_number: generatedPartNumber,
+      discipline: data.discipline || null,
       supplier: parsedData?.supplier || 'Not specified',
       part_description: 'Not specified',
       price: parsedData?.order_total || 0,
       lead_time: 'Not specified',
       contact_person: parsedData?.supplier_contact_name || 'Not specified',
       quote_reference: parsedData?.quote_reference || 'Not specified',
-      quote_date: parsedData?.quote_date || null,
+      quote_date: parsedQuoteDate || fallbackQuoteDate,
       total_net_amount: parsedData?.total_net_amount || 0,
       total_vat_amount: parsedData?.total_vat_amount || 0,
       order_total: parsedData?.order_total || 0,
