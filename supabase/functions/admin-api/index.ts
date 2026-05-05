@@ -18,12 +18,26 @@ const ALLOWED_SUBSCRIPTION_STATUSES = new Set([
   "expired",
 ]);
 
+function normalizeEndpointPath(rawPath: string): string {
+  const compact = rawPath
+    .split("/")
+    .map((segment) => segment.trim())
+    .filter(Boolean)
+    .join("/");
+
+  if (!compact) return "/";
+  return `/${compact}`;
+}
+
 function getEndpointPath(req: Request): string {
   const url = new URL(req.url);
   const parts = url.pathname.split("/").filter(Boolean);
   const fnIndex = parts.findIndex((p) => p === "admin-api");
-  const remaining = fnIndex >= 0 ? parts.slice(fnIndex + 1) : [];
-  return `/${remaining.join("/")}`;
+
+  // Supabase usually forwards `/functions/v1/admin-api/...`, but some runtimes/proxies
+  // can forward only the sub-path (`/users`, `/analytics`, etc.). Support both shapes.
+  const remaining = fnIndex >= 0 ? parts.slice(fnIndex + 1) : parts;
+  return normalizeEndpointPath(remaining.join("/"));
 }
 
 function normalizeEmail(email: string | null | undefined): string {
