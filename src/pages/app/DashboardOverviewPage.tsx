@@ -116,20 +116,28 @@ export function DashboardOverviewPage({ quotes, loading }: DashboardOverviewPage
           <CardHeader>
             <h3 className="font-semibold text-navy-950">Disciplines distribution</h3>
           </CardHeader>
-          <CardBody className="h-[320px] px-3 pb-3 pt-1">
+          <CardBody className="h-[350px] p-4">
             <ResponsiveContainer width="100%" height="100%">
-              <PieChart margin={{ top: 8, right: 92, bottom: 8, left: 8 }}>
-                <Pie data={byDiscipline} dataKey="value" nameKey="name" innerRadius={52} outerRadius={85}>
+              <PieChart margin={{ top: 8, right: 16, bottom: 20, left: 16 }}>
+                <Pie
+                  data={byDiscipline}
+                  dataKey="value"
+                  nameKey="name"
+                  cx="50%"
+                  cy="45%"
+                  innerRadius={60}
+                  outerRadius={100}
+                >
                   {byDiscipline.map((item, index) => (
                     <Cell key={item.name} fill={getDisciplineColor(item.name, index)} />
                   ))}
                 </Pie>
                 <Legend
-                  layout="vertical"
-                  align="right"
-                  verticalAlign="middle"
+                  align="center"
+                  verticalAlign="bottom"
                   iconType="circle"
-                  wrapperStyle={{ fontSize: '12px', lineHeight: '18px', paddingLeft: '8px' }}
+                  height={44}
+                  wrapperStyle={{ fontSize: '12px', lineHeight: '18px', paddingTop: '8px' }}
                   formatter={(value) => {
                     const label = String(value);
                     const percent = disciplinePercentages.get(label) ?? 0;
