@@ -3,6 +3,7 @@ import { FileSearch, FileText, Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { quoteStatus } from '../../lib/format';
+import { isSuperAdmin } from '../../lib/subscription';
 import { supabase } from '../../lib/supabase';
 import { useUiState } from '../../hooks/useUiState';
 
@@ -27,14 +28,13 @@ type QuoteSearchResult = {
   noteMatchIndex: number;
 };
 
-const routes: NavigationRoute[] = [
+const baseRoutes: NavigationRoute[] = [
   { label: 'Dashboard', path: '/app/dashboard' },
   { label: 'Quotes', path: '/app/quotes' },
   { label: 'Suppliers', path: '/app/suppliers' },
   { label: 'Analytics', path: '/app/analytics' },
   { label: 'Organization', path: '/app/organization' },
   { label: 'Settings', path: '/app/settings' },
-  { label: 'Admin Dashboard', path: '/app/admin' },
 ];
 
 const QUOTE_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -160,6 +160,7 @@ export function CommandPalette() {
   const [quotes, setQuotes] = useState<PaletteQuote[]>([]);
   const [isLoadingQuotes, setIsLoadingQuotes] = useState(false);
   const [quoteLoadError, setQuoteLoadError] = useState<string | null>(null);
+  const [isSuperadmin, setIsSuperadmin] = useState(false);
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
@@ -198,8 +199,13 @@ export function CommandPalette() {
         if (!user) {
           if (!cancelled) {
             setQuotes([]);
+            setIsSuperadmin(false);
           }
           return;
+        }
+
+        if (!cancelled) {
+          setIsSuperadmin(isSuperAdmin(user.email));
         }
 
         if (quoteCache && quoteCache.userId === user.id && Date.now() - quoteCache.fetchedAt < QUOTE_CACHE_TTL_MS) {
@@ -257,9 +263,10 @@ export function CommandPalette() {
   }, [commandOpen]);
 
   const navigationResults = useMemo(() => {
+    const routes = isSuperadmin ? [...baseRoutes, { label: 'Admin Dashboard', path: '/app/admin' }] : baseRoutes;
     if (!debouncedQuery) return routes.slice(0, 10);
     return routes.filter((route) => includesQuery(route.label, debouncedQuery)).slice(0, 10);
-  }, [debouncedQuery]);
+  }, [debouncedQuery, isSuperadmin]);
 
   const quoteResults = useMemo(() => {
     const scored = quotes

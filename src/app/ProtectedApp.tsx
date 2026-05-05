@@ -94,7 +94,7 @@ export function ProtectedApp() {
         return;
       }
 
-      const resolvedIsSuperadmin = isSuperAdmin(activeUser.email) || Boolean(profile?.is_superadmin);
+      const resolvedIsSuperadmin = isSuperAdmin(activeUser.email);
       if (resolvedIsSuperadmin) {
         setSuperadminAccess(profile);
         return;
@@ -313,7 +313,7 @@ export function ProtectedApp() {
 
         if (profile) {
           setUserProfile(profile);
-          if (options?.skipSubscriptionCheck || isSuperAdmin(activeUser.email) || profile.is_superadmin) {
+          if (options?.skipSubscriptionCheck || isSuperAdmin(activeUser.email)) {
             setSuperadminAccess(profile);
           } else {
             await refreshSubscriptionStatus(activeUser, profile);
@@ -395,7 +395,7 @@ export function ProtectedApp() {
         syncUserState(nextUser);
 
         if (nextUser) {
-          const superadmin = isSuperAdmin(nextUser.email) || Boolean(userProfileRef.current?.is_superadmin);
+          const superadmin = isSuperAdmin(nextUser.email);
           if (superadmin) {
             setSuperadminAccess(userProfileRef.current);
           }
@@ -435,7 +435,7 @@ export function ProtectedApp() {
     };
   }, []);
 
-  const isCurrentUserSuperadmin = isSuperAdmin(user?.email) || Boolean(subscriptionStatus?.is_superadmin);
+  const isCurrentUserSuperadmin = isSuperAdmin(user?.email);
 
   useEffect(() => {
     if (!isAuthReady || !user || subscriptionLoading) return;
@@ -598,7 +598,7 @@ export function ProtectedApp() {
             <UiStateProvider>
               <AppSidebar
                 canManageOrg={subscriptionStatus?.permissions.can_manage_organization}
-                isSuperadmin={subscriptionStatus?.is_superadmin}
+                isSuperadmin={isCurrentUserSuperadmin}
               />
               <div className="flex min-w-0 flex-1 flex-col">
                 <TopNav userProfile={userProfile} userEmail={user?.email} onSignOut={handleSignOut} />
@@ -655,7 +655,7 @@ export function ProtectedApp() {
                       <Route path="analytics" element={<AnalyticsPage quotes={quotes} />} />
                       <Route path="organization" element={<OrganizationPage subscriptionStatus={subscriptionStatus} />} />
                       <Route path="settings" element={<SettingsPage subscriptionStatus={subscriptionStatus} userEmail={user?.email} userName={userProfile?.name} />} />
-                      <Route path="admin" element={<AdminPage visible={!!subscriptionStatus?.is_superadmin} />} />
+                      <Route path="admin" element={<AdminPage visible={isCurrentUserSuperadmin} />} />
                       <Route path="*" element={<Navigate to="dashboard" replace />} />
                     </Routes>
                   </Suspense>

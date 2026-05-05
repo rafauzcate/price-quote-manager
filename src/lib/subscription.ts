@@ -194,6 +194,36 @@ export async function adminApiGetAnalytics() {
   return authedFetch('/admin-api/analytics', { method: 'GET' });
 }
 
+export async function adminApiCreateUser(payload: {
+  email: string;
+  company?: string;
+  name?: string;
+  plan_type: PlanType;
+  subscription_status?: string;
+  send_invitation_email?: boolean;
+}) {
+  return authedFetch('/admin-api/users', { method: 'POST', body: JSON.stringify(payload) });
+}
+
+export async function adminApiUpdateUser(
+  userId: string,
+  payload: {
+    company?: string;
+    name?: string;
+    plan_type?: PlanType;
+    subscription_status?: string;
+  },
+) {
+  return authedFetch(`/admin-api/users/${encodeURIComponent(userId)}`, { method: 'PUT', body: JSON.stringify(payload) });
+}
+
+export async function adminApiDeleteUser(userId: string, payload?: { hard_delete?: boolean }) {
+  return authedFetch(`/admin-api/users/${encodeURIComponent(userId)}`, {
+    method: 'DELETE',
+    body: JSON.stringify(payload ?? { hard_delete: false }),
+  });
+}
+
 export async function adminApiGrantAccess(payload: { user_id: string; plan_type: PlanType; days?: number }) {
   return authedFetch('/admin-api/grant-access', { method: 'POST', body: JSON.stringify(payload) });
 }

@@ -60,7 +60,8 @@ Deno.serve(async (req: Request) => {
       .limit(1)
       .maybeSingle();
 
-    const isSuperadmin = profile.is_superadmin || (user.email ? SUPERADMIN_EMAILS.has(user.email.toLowerCase()) : false);
+    const normalizedEmail = user.email?.toLowerCase() ?? null;
+    const isSuperadmin = normalizedEmail ? SUPERADMIN_EMAILS.has(normalizedEmail) : false;
 
     let hasAccess = false;
     let accessReason = "no_active_subscription";

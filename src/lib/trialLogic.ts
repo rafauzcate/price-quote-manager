@@ -1,4 +1,4 @@
-export const ADMIN_EMAIL = 'rafael.uzcategui@gmail.com';
+const SUPERADMIN_EMAILS = new Set(['rafael.uzcategui@gmail.com', 'hello@vantageprojectsolution.co.uk']);
 export const TRIAL_DAYS = 30;
 
 export interface TrialStatus {
@@ -11,7 +11,7 @@ export function calculateTrialStatus(
   userEmail: string,
   signupDate: string | null
 ): TrialStatus {
-  if (userEmail === ADMIN_EMAIL) {
+  if (SUPERADMIN_EMAILS.has(userEmail.trim().toLowerCase())) {
     return {
       isActive: true,
       daysRemaining: Infinity,
