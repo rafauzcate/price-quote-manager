@@ -484,55 +484,79 @@ export function AdminDashboard({ visible }: AdminDashboardProps) {
         </div>
       </Modal>
 
-      <Modal open={Boolean(userBeingEdited)} onClose={() => setUserBeingEdited(null)}>
-        <div className="space-y-4">
-          <h3 className="text-lg font-semibold text-navy-950">Edit user</h3>
-          <Input
-            label="Name"
-            value={editUserForm.name}
-            onChange={(e) => setEditUserForm((prev) => ({ ...prev, name: e.target.value }))}
-          />
-          <Input
-            label="Company"
-            value={editUserForm.company}
-            onChange={(e) => setEditUserForm((prev) => ({ ...prev, company: e.target.value }))}
-          />
+      <Modal
+        open={Boolean(userBeingEdited)}
+        onClose={() => setUserBeingEdited(null)}
+        panelClassName="max-w-3xl rounded-3xl"
+      >
+        <div className="p-6 sm:p-8">
+          <div className="mb-6 border-b border-slatePremium-200 pb-4 sm:mb-8 sm:pb-5">
+            <h3 className="text-2xl font-bold tracking-tight text-navy-950 sm:text-3xl">Edit user</h3>
+            <p className="mt-2 text-sm text-slatePremium-600">Update profile, plan, and subscription status.</p>
+          </div>
 
-          <label className="block text-sm font-medium text-slatePremium-700">
-            Plan
-            <select
-              value={editUserForm.plan_type}
-              onChange={(e) => setEditUserForm((prev) => ({ ...prev, plan_type: e.target.value as PlanType }))}
-              className="mt-1 w-full rounded-xl border border-slatePremium-300 px-3 py-2 text-sm"
+          <div className="space-y-6">
+            <label className="block">
+              <span className="mb-2 block text-sm font-medium text-slatePremium-700">Name</span>
+              <input
+                value={editUserForm.name}
+                onChange={(e) => setEditUserForm((prev) => ({ ...prev, name: e.target.value }))}
+                className="w-full rounded-xl border border-slatePremium-300 px-4 py-3 text-base text-slatePremium-900 placeholder:text-slatePremium-400 focus:border-gold-500 focus:outline-none focus:ring-2 focus:ring-gold-500/20"
+                placeholder="Enter user name"
+              />
+            </label>
+
+            <label className="block">
+              <span className="mb-2 block text-sm font-medium text-slatePremium-700">Company</span>
+              <input
+                value={editUserForm.company}
+                onChange={(e) => setEditUserForm((prev) => ({ ...prev, company: e.target.value }))}
+                className="w-full rounded-xl border border-slatePremium-300 px-4 py-3 text-base text-slatePremium-900 placeholder:text-slatePremium-400 focus:border-gold-500 focus:outline-none focus:ring-2 focus:ring-gold-500/20"
+                placeholder="Enter company name"
+              />
+            </label>
+
+            <label className="block">
+              <span className="mb-2 block text-sm font-medium text-slatePremium-700">Plan</span>
+              <select
+                value={editUserForm.plan_type}
+                onChange={(e) => setEditUserForm((prev) => ({ ...prev, plan_type: e.target.value as PlanType }))}
+                className="w-full rounded-xl border border-slatePremium-300 px-4 py-3 text-base text-slatePremium-900 focus:border-gold-500 focus:outline-none focus:ring-2 focus:ring-gold-500/20"
+              >
+                {PLAN_CONFIGS.map((plan) => (
+                  <option key={plan.id} value={plan.id}>
+                    {plan.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="block">
+              <span className="mb-2 block text-sm font-medium text-slatePremium-700">Subscription status</span>
+              <select
+                value={editUserForm.subscription_status}
+                onChange={(e) => setEditUserForm((prev) => ({ ...prev, subscription_status: e.target.value }))}
+                className="w-full rounded-xl border border-slatePremium-300 px-4 py-3 text-base text-slatePremium-900 focus:border-gold-500 focus:outline-none focus:ring-2 focus:ring-gold-500/20"
+              >
+                {SUBSCRIPTION_STATUS_OPTIONS.map((status) => (
+                  <option key={status} value={status}>
+                    {status}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <div className="mt-8 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+            <Button
+              variant="outline"
+              onClick={() => setUserBeingEdited(null)}
+              disabled={saving}
+              className="px-6 py-3 text-base"
             >
-              {PLAN_CONFIGS.map((plan) => (
-                <option key={plan.id} value={plan.id}>
-                  {plan.name}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="block text-sm font-medium text-slatePremium-700">
-            Subscription status
-            <select
-              value={editUserForm.subscription_status}
-              onChange={(e) => setEditUserForm((prev) => ({ ...prev, subscription_status: e.target.value }))}
-              className="mt-1 w-full rounded-xl border border-slatePremium-300 px-3 py-2 text-sm"
-            >
-              {SUBSCRIPTION_STATUS_OPTIONS.map((status) => (
-                <option key={status} value={status}>
-                  {status}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => setUserBeingEdited(null)} disabled={saving}>
               Cancel
             </Button>
-            <Button onClick={handleUpdateUser} disabled={saving}>
+            <Button onClick={handleUpdateUser} disabled={saving} className="px-6 py-3 text-base">
               {saving ? 'Saving...' : 'Update user'}
             </Button>
           </div>
